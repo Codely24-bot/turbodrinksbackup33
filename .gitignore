@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.codex-runtime/
+.wwebjs_auth/
+.wwebjs_cache/
+server/data/db.json
+npm-debug.log*
