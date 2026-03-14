@@ -39,8 +39,18 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "6mb" }));
 app.use("/public", express.static(path.join(rootDir, "public")));
+
+const defaultProductImageByCategory = {
+  Cervejas: "/products/beer.svg",
+  Refrigerantes: "/products/soda.svg",
+  Energeticos: "/products/energy.svg",
+  Aguas: "/products/water.svg",
+  Sucos: "/products/juice.svg",
+  Destilados: "/products/spirit.svg",
+  "Combos e promocoes": "/products/combo.svg"
+};
 
 const normalizeNeighborhood = (value = "") =>
   value
@@ -58,6 +68,41 @@ const statusSortValue = {
 };
 
 const parseMoney = (value) => Number(Number(value || 0).toFixed(2));
+const hasValue = (value) => value !== undefined && value !== null && value !== "";
+const getDefaultProductImage = (category) =>
+  defaultProductImageByCategory[category] || "/products/combo.svg";
+const isAllowedProductImage = (image) =>
+  typeof image === "string" &&
+  (image.startsWith("/products/") || image.startsWith("data:image/png;base64,"));
+const getSalePrice = (product) => parseMoney(product.salePrice ?? product.price);
+const getPurchasePrice = (product) => {
+  const salePrice = getSalePrice(product);
+  const legacyOriginalPrice = Number(product.originalPrice);
+  const fallbackPurchasePrice =
+    Number.isFinite(legacyOriginalPrice) && legacyOriginalPrice <= salePrice
+      ? legacyOriginalPrice
+      : salePrice;
+
+  return parseMoney(product.purchasePrice ?? fallbackPurchasePrice);
+};
+const resolveSalePrice = (payload, fallback = 0) =>
+  hasValue(payload.salePrice)
+    ? parseMoney(payload.salePrice)
+    : hasValue(payload.price)
+      ? parseMoney(payload.price)
+      : parseMoney(fallback);
+const resolvePurchasePrice = (payload, salePrice, fallback = salePrice) => {
+  if (hasValue(payload.purchasePrice)) {
+    return parseMoney(payload.purchasePrice);
+  }
+
+  if (hasValue(payload.originalPrice)) {
+    const legacyOriginalPrice = parseMoney(payload.originalPrice);
+    return legacyOriginalPrice <= salePrice ? legacyOriginalPrice : salePrice;
+  }
+
+  return parseMoney(fallback);
+};
 
 const sameDay = (date, compareDate = new Date()) => {
   const left = new Date(date);
@@ -79,7 +124,8 @@ const getStorePayload = (db) => ({
   products: db.products
     .filter((product) => product.active && product.stock > 0)
     .sort(
-      (left, right) => Number(right.featured) - Number(left.featured) || left.price - right.price
+      (left, right) =>
+        Number(right.featured) - Number(left.featured) || getSalePrice(left) - getSalePrice(right)
     ),
   featuredProducts: db.products.filter(
     (product) => product.active && product.stock > 0 && product.featured
@@ -318,13 +364,15 @@ app.post("/api/orders", async (request, response) => {
             return null;
           }
 
+          const salePrice = getSalePrice(product);
+
           return {
             productId: product.id,
             name: product.name,
             volume: product.volume,
-            unitPrice: parseMoney(product.price),
+            unitPrice: salePrice,
             quantity,
-            lineTotal: parseMoney(product.price * quantity)
+            lineTotal: parseMoney(salePrice * quantity)
           };
         })
         .filter(Boolean);
@@ -503,21 +551,27 @@ app.post("/api/admin/products", requireAdmin, (request, response) => {
     return response.status(400).json({ message: "Nome e categoria sao obrigatorios." });
   }
 
+  if (payload.image && !isAllowedProductImage(payload.image)) {
+    return response.status(400).json({ message: "Envie somente imagem PNG para o produto." });
+  }
+
   let createdProduct = null;
   const db = updateDB((draft) => {
+    const salePrice = resolveSalePrice(payload);
+
     createdProduct = {
       id: createId("prod"),
       name: payload.name,
       category: payload.category,
       volume: payload.volume || "",
-      price: parseMoney(payload.price),
-      originalPrice: parseMoney(payload.originalPrice || payload.price),
+      salePrice,
+      purchasePrice: resolvePurchasePrice(payload, salePrice),
       stock: Number(payload.stock || 0),
       active: payload.active ?? true,
       featured: payload.featured ?? false,
       badge: payload.badge || "",
       description: payload.description || "",
-      image: payload.image || "/products/combo.svg"
+      image: payload.image || getDefaultProductImage(payload.category)
     };
     draft.products.push(createdProduct);
     return draft;
@@ -531,6 +585,10 @@ app.put("/api/admin/products/:id", requireAdmin, (request, response) => {
   const payload = request.body || {};
   let updatedProduct = null;
 
+  if (payload.image !== undefined && !isAllowedProductImage(payload.image)) {
+    return response.status(400).json({ message: "Envie somente imagem PNG para o produto." });
+  }
+
   try {
     const db = updateDB((draft) => {
       const product = draft.products.find((entry) => entry.id === request.params.id);
@@ -539,15 +597,19 @@ app.put("/api/admin/products/:id", requireAdmin, (request, response) => {
         throw new Error("Produto nao encontrado.");
       }
 
+      const nextSalePrice = resolveSalePrice(payload, getSalePrice(product));
+      const nextPurchasePrice = resolvePurchasePrice(
+        payload,
+        nextSalePrice,
+        getPurchasePrice(product)
+      );
+
       Object.assign(product, {
         name: payload.name ?? product.name,
         category: payload.category ?? product.category,
         volume: payload.volume ?? product.volume,
-        price: payload.price !== undefined ? parseMoney(payload.price) : product.price,
-        originalPrice:
-          payload.originalPrice !== undefined
-            ? parseMoney(payload.originalPrice)
-            : product.originalPrice,
+        salePrice: nextSalePrice,
+        purchasePrice: nextPurchasePrice,
         stock: payload.stock !== undefined ? Number(payload.stock) : product.stock,
         active: payload.active ?? product.active,
         featured: payload.featured ?? product.featured,

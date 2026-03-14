@@ -44,7 +44,7 @@ function CartDrawer({
                 <div className="cart-item-copy">
                   <strong>{item.name}</strong>
                   <span>{item.volume}</span>
-                  <small>R$ {item.price.toFixed(2).replace(".", ",")}</small>
+                  <small>R$ {item.salePrice.toFixed(2).replace(".", ",")}</small>
                 </div>
 
                 <div className="cart-actions">

@@ -19,10 +19,7 @@ function ProductCard({ product, quantity, onAdd, onIncrease, onDecrease }) {
 
         <div className="product-footer">
           <div>
-            <strong>R$ {product.price.toFixed(2).replace(".", ",")}</strong>
-            {product.originalPrice > product.price ? (
-              <span>R$ {product.originalPrice.toFixed(2).replace(".", ",")}</span>
-            ) : null}
+            <strong>R$ {product.salePrice.toFixed(2).replace(".", ",")}</strong>
           </div>
 
           {quantity > 0 ? (

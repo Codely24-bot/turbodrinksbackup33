@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChartColumn,
   ClipboardList,
+  ImageUp,
   LogOut,
   MapPinned,
   MessageCircle,
@@ -15,6 +16,7 @@ import {
   Users
 } from "lucide-react";
 import { api, socket } from "../api";
+import BrandLogo from "../components/BrandLogo";
 import MetricCard from "../components/MetricCard";
 import { STATUS_STEPS } from "../components/StatusTimeline";
 
@@ -38,19 +40,25 @@ const imageByCategory = {
   "Combos e promocoes": "/products/combo.svg"
 };
 
-const defaultProductForm = {
+const defaultProductForm = () => ({
   name: "",
   category: "Cervejas",
   volume: "",
-  price: "",
-  originalPrice: "",
+  purchasePrice: "",
+  salePrice: "",
   stock: 0,
   active: true,
   featured: false,
   badge: "",
   description: "",
   image: "/products/beer.svg"
-};
+});
+const getProductFormState = (product = {}) => ({
+  ...defaultProductForm(),
+  ...product,
+  purchasePrice: product.purchasePrice ?? product.originalPrice ?? "",
+  salePrice: product.salePrice ?? product.price ?? ""
+});
 
 const defaultPromotionForm = {
   type: "daily",
@@ -67,6 +75,21 @@ const defaultPromotionForm = {
 
 const formatCurrency = (value) => `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 const formatDate = (value) => new Date(value).toLocaleString("pt-BR");
+const defaultProductImages = new Set(Object.values(imageByCategory));
+const getCategoryImage = (category) => imageByCategory[category] || "/products/combo.svg";
+const isDefaultProductImage = (image) => defaultProductImages.has(image);
+const getProductImageHint = (image) =>
+  image?.startsWith("data:image/png")
+    ? "PNG personalizado pronto para salvar."
+    : "Usando a imagem padrao da categoria.";
+
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Nao foi possivel ler a imagem PNG."));
+    reader.readAsDataURL(file);
+  });
 
 const getWhatsAppMeta = (status) => {
   if (!status?.enabled) {
@@ -264,6 +287,11 @@ function AdminPage() {
     return (
       <div className="page-shell centered admin-login">
         <div className="login-card">
+          <BrandLogo
+            subtitle="Loja, pedidos e WhatsApp em tempo real"
+            variant="login"
+            className="login-brand"
+          />
           <span className="eyebrow">Painel da distribuidora</span>
           <h1>Operacao em tempo real</h1>
           <p>Controle pedidos, clientes, estoque e automacao do WhatsApp em um unico lugar.</p>
@@ -300,9 +328,12 @@ function AdminPage() {
     return (
       <div className="page-shell admin">
         <header className="admin-header">
-          <div>
-            <span className="eyebrow">Dashboard operacional</span>
-            <h1>Turbo Drinks Admin</h1>
+          <div className="admin-brand">
+            <BrandLogo subtitle="Painel operacional" variant="admin" to="/" />
+            <div>
+              <span className="eyebrow">Dashboard operacional</span>
+              <h1>Turbo Drinks Admin</h1>
+            </div>
           </div>
         </header>
         <div className="loading-card admin-loading">
@@ -328,7 +359,7 @@ function AdminPage() {
     );
 
     if (ok) {
-      setProductForm(defaultProductForm);
+      setProductForm(defaultProductForm());
       setEditingProductId("");
     }
   };
@@ -360,12 +391,72 @@ function AdminPage() {
       "Taxas atualizadas."
     );
 
+  const handleProductCategoryChange = (category) => {
+    setProductForm((current) => ({
+      ...current,
+      category,
+      image:
+        !current.image || isDefaultProductImage(current.image)
+          ? getCategoryImage(category)
+          : current.image
+    }));
+  };
+
+  const handleProductImageUpload = async (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
+      setMessage("Envie somente imagens PNG para o produto.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage("A imagem PNG deve ter no maximo 2 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const imageDataUrl = await readFileAsDataUrl(file);
+
+      if (!imageDataUrl.startsWith("data:image/png")) {
+        throw new Error("O arquivo enviado nao e um PNG valido.");
+      }
+
+      setProductForm((current) => ({
+        ...current,
+        image: imageDataUrl
+      }));
+      setMessage(`Imagem PNG pronta para salvar: ${file.name}`);
+    } catch (error) {
+      setMessage(error.message || "Falha ao carregar a imagem PNG.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const resetProductImage = () => {
+    setProductForm((current) => ({
+      ...current,
+      image: getCategoryImage(current.category)
+    }));
+    setMessage("Imagem padrao da categoria restaurada.");
+  };
+
   return (
     <div className="page-shell admin">
       <header className="admin-header">
-        <div>
-          <span className="eyebrow">Dashboard operacional</span>
-          <h1>Turbo Drinks Admin</h1>
+        <div className="admin-brand">
+          <BrandLogo subtitle="Painel operacional" variant="admin" to="/" />
+          <div>
+            <span className="eyebrow">Dashboard operacional</span>
+            <h1>Turbo Drinks Admin</h1>
+          </div>
         </div>
         <div className="admin-header-actions">
           <button type="button" className="button button-soft" onClick={() => loadData(token)}>
@@ -515,7 +606,7 @@ function AdminPage() {
               </label>
               <label>
                 Categoria
-                <select value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value, image: imageByCategory[event.target.value] || current.image }))}>
+                <select value={productForm.category} onChange={(event) => handleProductCategoryChange(event.target.value)}>
                   {categories.map((category) => <option value={category} key={category}>{category}</option>)}
                 </select>
               </label>
@@ -528,17 +619,46 @@ function AdminPage() {
                 <input type="number" value={productForm.stock} onChange={(event) => setProductForm((current) => ({ ...current, stock: Number(event.target.value) }))} />
               </label>
               <label>
-                Preco
-                <input type="number" step="0.01" value={productForm.price} onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))} />
+                Preco de compra
+                <input type="number" step="0.01" value={productForm.purchasePrice} onChange={(event) => setProductForm((current) => ({ ...current, purchasePrice: event.target.value }))} />
               </label>
               <label>
-                Preco original
-                <input type="number" step="0.01" value={productForm.originalPrice} onChange={(event) => setProductForm((current) => ({ ...current, originalPrice: event.target.value }))} />
+                Preco de venda
+                <input type="number" step="0.01" value={productForm.salePrice} onChange={(event) => setProductForm((current) => ({ ...current, salePrice: event.target.value }))} />
               </label>
               <label className="field-span">
                 Descricao
                 <textarea rows="3" value={productForm.description} onChange={(event) => setProductForm((current) => ({ ...current, description: event.target.value }))} />
               </label>
+              <div className="field-span image-upload-field">
+                <span className="field-label">Imagem do produto</span>
+                <div className="product-image-upload">
+                  <div className="product-image-preview">
+                    <img src={productForm.image} alt={productForm.name || "Preview do produto"} />
+                  </div>
+                  <div className="product-image-meta">
+                    <strong>{editingProductId ? "Editar imagem atual" : "Definir imagem do produto"}</strong>
+                    <span>{getProductImageHint(productForm.image)}</span>
+                    <small>Aceita somente arquivo PNG com ate 2 MB.</small>
+                    <input
+                      id="product-image-upload"
+                      className="file-input-hidden"
+                      type="file"
+                      accept="image/png,.png"
+                      onChange={handleProductImageUpload}
+                    />
+                    <div className="card-actions">
+                      <label htmlFor="product-image-upload" className="button button-outline button-upload">
+                        <ImageUp size={16} />
+                        Enviar PNG
+                      </label>
+                      <button type="button" className="button button-soft" onClick={resetProductImage}>
+                        Usar imagem padrao
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <button type="button" className="button button-primary button-block" disabled={saving} onClick={saveProduct}>
               {saving ? "Salvando..." : editingProductId ? "Atualizar produto" : "Cadastrar produto"}
@@ -551,10 +671,12 @@ function AdminPage() {
                 <div>
                   <strong>{product.name}</strong>
                   <span>{product.category} - {product.volume}</span>
-                  <small>{formatCurrency(product.price)} - estoque {product.stock}</small>
+                  <small>
+                    Venda {formatCurrency(product.salePrice)} - compra {formatCurrency(product.purchasePrice)} - estoque {product.stock}
+                  </small>
                 </div>
                 <div className="card-actions">
-                  <button type="button" className="button button-soft" onClick={() => { setActiveTab("products"); setEditingProductId(product.id); setProductForm({ ...product }); }}>Editar</button>
+                  <button type="button" className="button button-soft" onClick={() => { setActiveTab("products"); setEditingProductId(product.id); setProductForm(getProductFormState(product)); setMessage(""); }}>Editar</button>
                   <button type="button" className="button button-outline" onClick={() => runAction(() => api.toggleProduct(token, product.id), product.active ? "Produto pausado." : "Produto ativado.")}>{product.active ? "Pausar" : "Ativar"}</button>
                   <button type="button" className="button button-muted" onClick={() => runAction(() => api.deleteProduct(token, product.id), "Produto removido.")}>Remover</button>
                 </div>
