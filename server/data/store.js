@@ -24,8 +24,18 @@ const normalizeProduct = (product) => {
     purchasePrice
   };
 };
+const normalizeExpense = (expense) => ({
+  ...expense,
+  amount: normalizeMoney(expense?.amount)
+});
+const normalizeRider = (rider) => ({
+  ...rider,
+  active: rider?.active ?? true
+});
 const normalizeDatabase = (data) => ({
   ...data,
+  expenses: Array.isArray(data.expenses) ? data.expenses.map(normalizeExpense) : [],
+  riders: Array.isArray(data.riders) ? data.riders.map(normalizeRider) : [],
   products: Array.isArray(data.products) ? data.products.map(normalizeProduct) : []
 });
 

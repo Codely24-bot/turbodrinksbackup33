@@ -68,6 +68,13 @@ const statusSortValue = {
 };
 
 const parseMoney = (value) => Number(Number(value || 0).toFixed(2));
+const parseExpenseDate = (value, fallback) => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+};
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 const getDefaultProductImage = (category) =>
   defaultProductImageByCategory[category] || "/products/combo.svg";
@@ -102,6 +109,19 @@ const resolvePurchasePrice = (payload, salePrice, fallback = salePrice) => {
   }
 
   return parseMoney(fallback);
+};
+
+const buildStatusTimeline = (status, timestamp = new Date().toISOString()) => {
+  const currentIndex = STATUS_FLOW.indexOf(status);
+
+  if (currentIndex <= 0) {
+    return [{ status: "received", timestamp }];
+  }
+
+  return STATUS_FLOW.slice(0, currentIndex + 1).map((step) => ({
+    status: step,
+    timestamp
+  }));
 };
 
 const sameDay = (date, compareDate = new Date()) => {
@@ -168,22 +188,89 @@ const aggregateTopProducts = (orders) => {
     .slice(0, 5);
 };
 
+const buildDailySeries = (orders, days = 7) => {
+  const today = new Date();
+  const dayKeys = [];
+
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    const label = date.toLocaleDateString("pt-BR", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit"
+    });
+    dayKeys.push({ key, label });
+  }
+
+  const totals = orders.reduce((accumulator, order) => {
+    const date = new Date(order.createdAt);
+    const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    accumulator[key] = (accumulator[key] || 0) + order.total;
+    return accumulator;
+  }, {});
+
+  return dayKeys.map(({ key, label }) => ({
+    day: label,
+    value: parseMoney(totals[key] || 0)
+  }));
+};
+
 const buildDashboard = (db) => {
+  const resolveChannel = (order) => (order?.channel === "pos" ? "pos" : "delivery");
   const todayOrders = db.orders.filter((order) => sameDay(order.createdAt));
   const weeklyOrders = db.orders.filter((order) => isWithinDays(order.createdAt, 7));
   const monthlyOrders = db.orders.filter((order) => isWithinDays(order.createdAt, 30));
+  const expenses = Array.isArray(db.expenses) ? [...db.expenses] : [];
+  const expensesSorted = expenses.sort(
+    (left, right) =>
+      new Date(right.createdAt || right.date || 0).getTime() -
+      new Date(left.createdAt || left.date || 0).getTime()
+  );
+  const expensesTotal = expensesSorted.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+
+  const todayDeliveryOrders = todayOrders.filter((order) => resolveChannel(order) === "delivery");
+  const todayPosOrders = todayOrders.filter((order) => resolveChannel(order) === "pos");
+  const weeklyDeliveryOrders = weeklyOrders.filter((order) => resolveChannel(order) === "delivery");
+  const weeklyPosOrders = weeklyOrders.filter((order) => resolveChannel(order) === "pos");
+  const monthlyDeliveryOrders = monthlyOrders.filter((order) => resolveChannel(order) === "delivery");
+  const monthlyPosOrders = monthlyOrders.filter((order) => resolveChannel(order) === "pos");
 
   const salesToday = todayOrders.reduce((sum, order) => sum + order.total, 0);
+  const salesTodayDelivery = todayDeliveryOrders.reduce((sum, order) => sum + order.total, 0);
+  const salesTodayPos = todayPosOrders.reduce((sum, order) => sum + order.total, 0);
   const weeklyRevenue = weeklyOrders.reduce((sum, order) => sum + order.total, 0);
+  const weeklyRevenueDelivery = weeklyDeliveryOrders.reduce((sum, order) => sum + order.total, 0);
+  const weeklyRevenuePos = weeklyPosOrders.reduce((sum, order) => sum + order.total, 0);
   const monthlyRevenue = monthlyOrders.reduce((sum, order) => sum + order.total, 0);
+  const monthlyRevenueDelivery = monthlyDeliveryOrders.reduce((sum, order) => sum + order.total, 0);
+  const monthlyRevenuePos = monthlyPosOrders.reduce((sum, order) => sum + order.total, 0);
 
   return {
     kpis: {
       salesToday: parseMoney(salesToday),
+      salesTodayDelivery: parseMoney(salesTodayDelivery),
+      salesTodayPos: parseMoney(salesTodayPos),
       ordersToday: todayOrders.length,
+      ordersTodayDelivery: todayDeliveryOrders.length,
+      ordersTodayPos: todayPosOrders.length,
       avgTicket: parseMoney(monthlyOrders.length ? monthlyRevenue / monthlyOrders.length : 0),
+      avgTicketDelivery: parseMoney(
+        monthlyDeliveryOrders.length
+          ? monthlyRevenueDelivery / monthlyDeliveryOrders.length
+          : 0
+      ),
+      avgTicketPos: parseMoney(
+        monthlyPosOrders.length ? monthlyRevenuePos / monthlyPosOrders.length : 0
+      ),
       weeklyRevenue: parseMoney(weeklyRevenue),
-      monthlyRevenue: parseMoney(monthlyRevenue)
+      weeklyRevenueDelivery: parseMoney(weeklyRevenueDelivery),
+      weeklyRevenuePos: parseMoney(weeklyRevenuePos),
+      monthlyRevenue: parseMoney(monthlyRevenue),
+      monthlyRevenueDelivery: parseMoney(monthlyRevenueDelivery),
+      monthlyRevenuePos: parseMoney(monthlyRevenuePos)
     },
     statusCounts: STATUS_FLOW.reduce((summary, status) => {
       summary[status] = db.orders.filter((order) => order.status === status).length;
@@ -196,6 +283,9 @@ const buildDashboard = (db) => {
     customers: [...db.customers].sort((left, right) => right.totalSpent - left.totalSpent),
     products: [...db.products].sort((left, right) => left.name.localeCompare(right.name)),
     promotions: db.promotions,
+    riders: Array.isArray(db.riders) ? db.riders : [],
+    expenses: expensesSorted,
+    expensesTotal: parseMoney(expensesTotal),
     deliveryFees: db.settings.deliveryFees,
     whatsapp: getWhatsAppStatus()
   };
@@ -251,13 +341,18 @@ const requireAdmin = (request, response, next) => {
   return next();
 };
 
-const notifyOrderUpdate = (order, status) => {
+const notifyOrderUpdate = (order, status, options = {}) => {
   io.emit("order:updated", order);
   io.to(`order:${order.id}`).emit("order:updated", order);
   io.emit("dashboard:update");
-  sendWhatsAppUpdate(order, status).catch((error) => {
-    console.error("[whatsapp-error]", error?.message || error);
-  });
+  const shouldNotifyWhatsapp =
+    !options.skipWhatsApp && order?.channel !== "pos" && order?.customer?.phone;
+
+  if (shouldNotifyWhatsapp) {
+    sendWhatsAppUpdate(order, status).catch((error) => {
+      console.error("[whatsapp-error]", error?.message || error);
+    });
+  }
 };
 
 io.on("connection", (socket) => {
@@ -414,6 +509,7 @@ app.post("/api/orders", async (request, response) => {
         number: getSequenceNumber(draft.orders),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        channel: "delivery",
         customerId: customer.id,
         customer: {
           name: payload.name,
@@ -431,7 +527,7 @@ app.post("/api/orders", async (request, response) => {
         discount,
         total: parseMoney(subtotal + deliveryFee - discount),
         status: "received",
-        statusTimeline: [{ status: "received", timestamp: new Date().toISOString() }]
+        statusTimeline: buildStatusTimeline("received")
       };
 
       items.forEach((item) => {
@@ -466,6 +562,226 @@ app.post("/api/orders", async (request, response) => {
   } catch (error) {
     return response.status(400).json({
       message: error.message || "Nao foi possivel criar o pedido."
+    });
+  }
+});
+
+app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+
+  if (!Array.isArray(payload.items) || !payload.items.length) {
+    return response.status(400).json({ message: "Adicione ao menos um item ao carrinho." });
+  }
+
+  let createdOrder = null;
+
+  try {
+    const db = updateDB((draft) => {
+      const items = payload.items
+        .map((item) => {
+          const product = draft.products.find((entry) => entry.id === item.productId);
+
+          if (!product || !product.active || product.stock <= 0) {
+            return null;
+          }
+
+          const quantity = Number(item.quantity || 0);
+
+          if (quantity <= 0 || quantity > product.stock) {
+            return null;
+          }
+
+          const salePrice = getSalePrice(product);
+
+          return {
+            productId: product.id,
+            name: product.name,
+            volume: product.volume,
+            unitPrice: salePrice,
+            quantity,
+            lineTotal: parseMoney(salePrice * quantity)
+          };
+        })
+        .filter(Boolean);
+
+      if (!items.length) {
+        throw new Error("Carrinho invalido.");
+      }
+
+      const subtotal = parseMoney(items.reduce((sum, item) => sum + item.lineTotal, 0));
+      const { discount: rawDiscount } = applyPromotions({
+        db: draft,
+        subtotal,
+        neighborhood: payload.neighborhood || "",
+        couponCode: payload.couponCode
+      });
+      const promoDiscount = parseMoney(rawDiscount);
+      const discountBase = Math.max(subtotal - promoDiscount, 0);
+      const manualDiscount = Math.max(parseMoney(payload.manualDiscount), 0);
+      const manualDiscountPercent = Math.min(
+        Math.max(Number(payload.manualDiscountPercent || 0), 0),
+        100
+      );
+      const manualDiscountPercentAmount = parseMoney(
+        (discountBase * manualDiscountPercent) / 100
+      );
+      const manualDiscountFixedApplied = Math.min(manualDiscount, discountBase);
+      const manualDiscountPercentApplied = Math.min(
+        manualDiscountPercentAmount,
+        Math.max(discountBase - manualDiscountFixedApplied, 0)
+      );
+      const manualDiscountTotal = parseMoney(
+        manualDiscountFixedApplied + manualDiscountPercentApplied
+      );
+      const discount = Math.min(promoDiscount + manualDiscountTotal, subtotal);
+      const surchargeBase = Math.max(subtotal - discount, 0);
+      const manualSurcharge = Math.max(parseMoney(payload.manualSurcharge), 0);
+      const manualSurchargePercent = Math.min(
+        Math.max(Number(payload.manualSurchargePercent || 0), 0),
+        100
+      );
+      const manualSurchargePercentAmount = parseMoney(
+        (surchargeBase * manualSurchargePercent) / 100
+      );
+      const manualSurchargeTotal = parseMoney(manualSurcharge + manualSurchargePercentAmount);
+      const now = new Date().toISOString();
+      const customerPhone = normalizePhone(payload.phone);
+      const customerName = String(payload.name || "").trim() || "Cliente balcao";
+      const customerAddress = String(payload.address || "").trim() || "Retirada no balcao";
+      const customerNeighborhood = String(payload.neighborhood || "").trim() || "Loja";
+      const total = parseMoney(Math.max(subtotal - discount + manualSurchargeTotal, 0));
+      const rawPayments = Array.isArray(payload.payments) ? payload.payments : [];
+      let payments = [];
+      let paidTotal = total;
+      let changeDue = 0;
+      let paymentMethod = payload.paymentMethod || "pix";
+
+      if (rawPayments.length) {
+        payments = rawPayments
+          .map((entry) => ({
+            method: String(entry.method || "pix").trim() || "pix",
+            amount: parseMoney(entry.amount)
+          }))
+          .filter((entry) => entry.amount > 0);
+
+        if (!payments.length) {
+          throw new Error("Informe ao menos uma forma de pagamento.");
+        }
+
+        const paymentsTotal = parseMoney(payments.reduce((sum, entry) => sum + entry.amount, 0));
+        const cashTotal = parseMoney(
+          payments
+            .filter((entry) => entry.method === "dinheiro")
+            .reduce((sum, entry) => sum + entry.amount, 0)
+        );
+        const overpayment = parseMoney(Math.max(paymentsTotal - total, 0));
+
+        if (paymentsTotal < total) {
+          throw new Error("Pagamentos insuficientes.");
+        }
+
+        if (overpayment > 0 && cashTotal < overpayment) {
+          throw new Error("Troco maior que dinheiro informado.");
+        }
+
+        paymentMethod = payments.length === 1 ? payments[0].method : "multiple";
+        paidTotal = paymentsTotal;
+        changeDue = overpayment;
+      } else {
+        payments = [{ method: paymentMethod, amount: total }];
+      }
+
+      let customer = null;
+
+      if (customerPhone) {
+        customer = draft.customers.find((entry) => normalizePhone(entry.phone) === customerPhone);
+      }
+
+      if (!customer && customerPhone) {
+        customer = {
+          id: createId("customer"),
+          name: customerName,
+          phone: customerPhone,
+          address: customerAddress,
+          neighborhood: customerNeighborhood,
+          notes: payload.note || "",
+          totalSpent: 0,
+          orderIds: [],
+          lastOrderId: null,
+          createdAt: now,
+          updatedAt: now
+        };
+        draft.customers.push(customer);
+      }
+
+      const status = STATUS_FLOW.includes(payload.status) ? payload.status : "delivered";
+
+      const order = {
+        id: createId("order"),
+        number: getSequenceNumber(draft.orders),
+        createdAt: now,
+        updatedAt: now,
+        channel: "pos",
+        customerId: customer ? customer.id : null,
+        customer: {
+          name: customerName,
+          phone: customerPhone,
+          address: customerAddress,
+          neighborhood: customerNeighborhood,
+          note: payload.note || ""
+        },
+        items,
+        paymentMethod,
+        payments,
+        paidTotal,
+        changeDue,
+        couponCode: payload.couponCode || "",
+        subtotal,
+        deliveryFee: 0,
+        discount,
+        manualDiscount,
+        manualDiscountPercent,
+        manualDiscountPercentAmount: manualDiscountPercentApplied,
+        manualSurcharge,
+        manualSurchargePercent,
+        manualSurchargePercentAmount,
+        promoDiscount,
+        total,
+        status,
+        statusTimeline: buildStatusTimeline(status, now)
+      };
+
+      items.forEach((item) => {
+        const product = draft.products.find((entry) => entry.id === item.productId);
+        product.stock -= item.quantity;
+      });
+
+      if (customer) {
+        customer.name = customerName;
+        customer.phone = customerPhone;
+        customer.address = customerAddress;
+        customer.neighborhood = customerNeighborhood;
+        customer.notes = payload.note || customer.notes || "";
+        customer.totalSpent = parseMoney(Number(customer.totalSpent || 0) + order.total);
+        customer.lastOrderId = order.id;
+        customer.updatedAt = now;
+        customer.orderIds = [...new Set([...(customer.orderIds || []), order.id])];
+      }
+
+      draft.orders.push(order);
+      createdOrder = order;
+      return draft;
+    });
+
+    notifyOrderUpdate(createdOrder, createdOrder.status, { skipWhatsApp: true });
+
+    return response.status(201).json({
+      order: createdOrder,
+      store: getStorePayload(db)
+    });
+  } catch (error) {
+    return response.status(400).json({
+      message: error.message || "Nao foi possivel registrar a venda PDV."
     });
   }
 });
@@ -747,6 +1063,217 @@ app.delete("/api/admin/promotions/:id", requireAdmin, (request, response) => {
   return response.status(204).end();
 });
 
+app.get("/api/admin/expenses", requireAdmin, (_request, response) => {
+  const db = readDB();
+  const expenses = Array.isArray(db.expenses) ? db.expenses : [];
+  response.json(
+    [...expenses].sort(
+      (left, right) =>
+        new Date(right.createdAt || right.date || 0).getTime() -
+        new Date(left.createdAt || left.date || 0).getTime()
+    )
+  );
+});
+
+app.post("/api/admin/expenses", requireAdmin, (request, response) => {
+  const payload = request.body || {};
+
+  if (!payload.title || !parseMoney(payload.amount)) {
+    return response.status(400).json({ message: "Informe titulo e valor da despesa." });
+  }
+
+  const now = new Date().toISOString();
+  const expense = {
+    id: createId("expense"),
+    title: String(payload.title || "").trim(),
+    category: String(payload.category || "").trim(),
+    amount: parseMoney(payload.amount),
+    date: parseExpenseDate(payload.date, now),
+    note: String(payload.note || "").trim(),
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const db = updateDB((draft) => {
+    draft.expenses = Array.isArray(draft.expenses) ? draft.expenses : [];
+    draft.expenses.push(expense);
+    return draft;
+  });
+
+  return response.status(201).json({
+    expense,
+    total: parseMoney(
+      (db.expenses || []).reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+    )
+  });
+});
+
+app.put("/api/admin/expenses/:id", requireAdmin, (request, response) => {
+  const payload = request.body || {};
+  const now = new Date().toISOString();
+  let updatedExpense = null;
+
+  try {
+    updateDB((draft) => {
+      draft.expenses = Array.isArray(draft.expenses) ? draft.expenses : [];
+      const expense = draft.expenses.find((entry) => entry.id === request.params.id);
+
+      if (!expense) {
+        throw new Error("Despesa nao encontrada.");
+      }
+
+      if (hasValue(payload.title)) {
+        expense.title = String(payload.title || "").trim();
+      }
+      if (hasValue(payload.category)) {
+        expense.category = String(payload.category || "").trim();
+      }
+      if (hasValue(payload.amount)) {
+        expense.amount = parseMoney(payload.amount);
+      }
+      if (hasValue(payload.date)) {
+        expense.date = parseExpenseDate(payload.date, expense.date || expense.createdAt || now);
+      }
+      if (hasValue(payload.note)) {
+        expense.note = String(payload.note || "").trim();
+      }
+
+      expense.updatedAt = now;
+      updatedExpense = expense;
+      return draft;
+    });
+
+    return response.json({ expense: updatedExpense });
+  } catch (error) {
+    return response.status(404).json({ message: error.message || "Despesa nao encontrada." });
+  }
+});
+
+app.delete("/api/admin/expenses/:id", requireAdmin, (request, response) => {
+  updateDB((draft) => {
+    draft.expenses = Array.isArray(draft.expenses) ? draft.expenses : [];
+    draft.expenses = draft.expenses.filter((expense) => expense.id !== request.params.id);
+    return draft;
+  });
+
+  return response.json({ ok: true });
+});
+
+app.get("/api/admin/riders", requireAdmin, (_request, response) => {
+  const db = readDB();
+  const riders = Array.isArray(db.riders) ? db.riders : [];
+  response.json(
+    [...riders].sort((left, right) => left.name.localeCompare(right.name))
+  );
+});
+
+app.post("/api/admin/riders", requireAdmin, (request, response) => {
+  const payload = request.body || {};
+
+  if (!payload.name) {
+    return response.status(400).json({ message: "Informe o nome do motoboy." });
+  }
+
+  const now = new Date().toISOString();
+  const rider = {
+    id: createId("rider"),
+    name: String(payload.name || "").trim(),
+    phone: String(payload.phone || "").trim(),
+    active: payload.active ?? true,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  updateDB((draft) => {
+    draft.riders = Array.isArray(draft.riders) ? draft.riders : [];
+    draft.riders.push(rider);
+    return draft;
+  });
+
+  return response.status(201).json(rider);
+});
+
+app.put("/api/admin/riders/:id", requireAdmin, (request, response) => {
+  const payload = request.body || {};
+  const now = new Date().toISOString();
+  let updatedRider = null;
+
+  try {
+    updateDB((draft) => {
+      draft.riders = Array.isArray(draft.riders) ? draft.riders : [];
+      const rider = draft.riders.find((entry) => entry.id === request.params.id);
+
+      if (!rider) {
+        throw new Error("Motoboy nao encontrado.");
+      }
+
+      if (hasValue(payload.name)) {
+        rider.name = String(payload.name || "").trim();
+      }
+      if (hasValue(payload.phone)) {
+        rider.phone = String(payload.phone || "").trim();
+      }
+      if (payload.active !== undefined) {
+        rider.active = Boolean(payload.active);
+      }
+
+      rider.updatedAt = now;
+      updatedRider = rider;
+      return draft;
+    });
+
+    return response.json(updatedRider);
+  } catch (error) {
+    return response.status(404).json({ message: error.message || "Motoboy nao encontrado." });
+  }
+});
+
+app.delete("/api/admin/riders/:id", requireAdmin, (request, response) => {
+  updateDB((draft) => {
+    draft.riders = Array.isArray(draft.riders) ? draft.riders : [];
+    draft.riders = draft.riders.filter((rider) => rider.id !== request.params.id);
+    draft.orders = draft.orders.map((order) =>
+      order.riderId === request.params.id ? { ...order, riderId: null } : order
+    );
+    return draft;
+  });
+
+  return response.json({ ok: true });
+});
+
+app.put("/api/admin/orders/:id/rider", requireAdmin, (request, response) => {
+  const { riderId } = request.body || {};
+  let updatedOrder = null;
+
+  try {
+    updateDB((draft) => {
+      const order = draft.orders.find((entry) => entry.id === request.params.id);
+
+      if (!order) {
+        throw new Error("Pedido nao encontrado.");
+      }
+
+      if (riderId) {
+        const rider = (draft.riders || []).find((entry) => entry.id === riderId);
+        if (!rider) {
+          throw new Error("Motoboy nao encontrado.");
+        }
+        order.riderId = riderId;
+      } else {
+        order.riderId = null;
+      }
+
+      order.updatedAt = new Date().toISOString();
+      updatedOrder = order;
+      return draft;
+    });
+
+    return response.json(updatedOrder);
+  } catch (error) {
+    return response.status(400).json({ message: error.message || "Falha ao atualizar motoboy." });
+  }
+});
+
 app.get("/api/admin/customers", requireAdmin, (_request, response) => {
   const db = readDB();
   const customers = db.customers.map((customer) => ({
@@ -775,23 +1302,26 @@ app.put("/api/admin/settings/fees", requireAdmin, (request, response) => {
   return response.json(db.settings.deliveryFees);
 });
 
-app.get("/api/admin/reports", requireAdmin, (_request, response) => {
+app.get("/api/admin/reports", requireAdmin, (request, response) => {
   const db = readDB();
   const dashboard = buildDashboard(db);
+  const requestedDays = Number(request.query.days || 7);
+  const periodDays = Number.isFinite(requestedDays)
+    ? Math.min(Math.max(Math.floor(requestedDays), 1), 60)
+    : 7;
+  const recentOrders = dashboard.recentOrders.filter((order) =>
+    isWithinDays(order.createdAt, periodDays)
+  );
+  const deliveryOrders = recentOrders.filter((order) => order.channel !== "pos");
+  const posOrders = recentOrders.filter((order) => order.channel === "pos");
 
   response.json({
     ...dashboard.kpis,
+    periodDays,
     topProducts: dashboard.topProducts,
-    dailySales: dashboard.recentOrders
-      .filter((order) => isWithinDays(order.createdAt, 7))
-      .map((order) => ({
-        day: new Date(order.createdAt).toLocaleDateString("pt-BR", {
-          weekday: "short",
-          day: "2-digit",
-          month: "2-digit"
-        }),
-        value: order.total
-      }))
+    dailySales: buildDailySeries(recentOrders, periodDays),
+    dailySalesDelivery: buildDailySeries(deliveryOrders, periodDays),
+    dailySalesPos: buildDailySeries(posOrders, periodDays)
   });
 });
 

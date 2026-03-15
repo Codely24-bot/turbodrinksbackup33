@@ -12,7 +12,6 @@ import {
   Truck
 } from "lucide-react";
 import { api, socket } from "../api";
-import BrandLogo from "../components/BrandLogo";
 import ProductCard from "../components/ProductCard";
 import CartDrawer from "../components/CartDrawer";
 
@@ -180,7 +179,7 @@ function StorefrontPage() {
       ? store.products
       : store.products.filter((product) => product.category === selectedCategory);
 
-  const subtotal = cartItems.reduce((sum, item) => sum + item.salePrice * item.quantity, 0);
+  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const deliveryFee = estimateDeliveryFee(
     store.settings.deliveryFees || {},
     store.promotions || [],
@@ -312,7 +311,13 @@ function StorefrontPage() {
     <div className="page-shell storefront">
       <header className="hero-panel">
         <div className="topbar">
-          <BrandLogo subtitle={store.settings.tagline} variant="storefront" />
+          <Link to="/" className="brand-mark">
+            <span className="brand-icon">TD</span>
+            <div>
+              <strong>{store.settings.storeName}</strong>
+              <small>{store.settings.tagline}</small>
+            </div>
+          </Link>
 
           <div className="topbar-actions">
             <a href={whatsAppLink} target="_blank" rel="noreferrer" className="button button-muted">
@@ -421,7 +426,7 @@ function StorefrontPage() {
                   <img src={product.image} alt={product.name} />
                   <div>
                     <strong>{product.name}</strong>
-                    <span>{formatCurrency(product.salePrice)}</span>
+                    <span>{formatCurrency(product.price)}</span>
                   </div>
                   <button type="button" className="button button-outline" onClick={() => addProduct(product.id)}>
                     <ArrowRight size={16} />

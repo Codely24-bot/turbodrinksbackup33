@@ -51,11 +51,23 @@ export const api = {
     request("/api/admin/orders", {
       headers: { Authorization: `Bearer ${token}` }
     }),
+  createPosOrder: (token, body) =>
+    request("/api/admin/pos/orders", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
   updateOrderStatus: (token, id, status) =>
     request(`/api/admin/orders/${id}/status`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ status })
+    }),
+  updateOrderRider: (token, id, riderId) =>
+    request(`/api/admin/orders/${id}/rider`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ riderId })
     }),
   createProduct: (token, body) =>
     request("/api/admin/products", {
@@ -106,8 +118,42 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ fees })
     }),
-  getReports: (token) =>
-    request("/api/admin/reports", {
+  getReports: (token, days) =>
+    request(`/api/admin/reports${days ? `?days=${days}` : ""}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+  createExpense: (token, body) =>
+    request("/api/admin/expenses", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  updateExpense: (token, id, body) =>
+    request(`/api/admin/expenses/${id}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  deleteExpense: (token, id) =>
+    request(`/api/admin/expenses/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+  createRider: (token, body) =>
+    request("/api/admin/riders", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  updateRider: (token, id, body) =>
+    request(`/api/admin/riders/${id}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  deleteRider: (token, id) =>
+    request(`/api/admin/riders/${id}`, {
+      method: "DELETE",
       headers: { Authorization: `Bearer ${token}` }
     })
 };

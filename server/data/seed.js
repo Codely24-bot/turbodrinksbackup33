@@ -27,6 +27,8 @@ export const initialData = {
       "Parque das Flores": 9
     }
   },
+  expenses: [],
+  riders: [],
   products: [
     {
       id: "prod-heineken-ln",
