@@ -43,6 +43,23 @@ npm run dev
 - `WHATSAPP_CLIENT_ID=delivery-distribuidora`
 - `WHATSAPP_HEADLESS=true`
 - `PUPPETEER_EXECUTABLE_PATH=/caminho/do/chrome`
+- `DATA_DIR=/caminho/para/persistir`
+- `WHATSAPP_AUTH_DIR=/caminho/para/persistir/.wwebjs_auth`
+- `WHATSAPP_CACHE_DIR=/caminho/para/persistir/.wwebjs_cache`
+
+## Deploy Railway (servico unico)
+
+1. Builder: use Nixpacks (o projeto inclui `nixpacks.toml`).
+2. Start command: `npm start` (ou deixe detectar).
+3. Volume: monte em `/data`.
+4. Variaveis sugeridas:
+   - `PUBLIC_STORE_URL=https://SEU_DOMINIO_RAILWAY`
+   - `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_TOKEN`
+   - `WHATSAPP_ENABLED=true`
+   - `WHATSAPP_HEADLESS=true`
+   - `DATA_DIR=/data`
+   - `WHATSAPP_AUTH_DIR=/data/.wwebjs_auth`
+   - `WHATSAPP_CACHE_DIR=/data/.wwebjs_cache`
 
 ## Fluxo do WhatsApp
 

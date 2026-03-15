@@ -1,6 +1,7 @@
+import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { readDB } from "../data/store.js";
+import { getDataDir, readDB } from "../data/store.js";
 import { normalizePhone, phonesMatch, toWhatsAppChatId } from "./phone.js";
 import {
   STATUS_LABELS,
@@ -32,6 +33,18 @@ let client = null;
 
 const sessions = new Map();
 const antiSpam = new Map();
+
+const ensureDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+const resolveWhatsAppDir = (envKey, fallbackName) => {
+  const dataDir = getDataDir();
+  const configured = process.env[envKey];
+  return path.resolve(configured || path.join(dataDir, fallbackName));
+};
 
 const normalizeText = (text = "") =>
   text
@@ -144,12 +157,21 @@ const updateQrAssets = async (qr) => {
 const createClient = () => {
   const executablePath =
     process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || undefined;
+  const authPath = resolveWhatsAppDir("WHATSAPP_AUTH_DIR", ".wwebjs_auth");
+  const cachePath = resolveWhatsAppDir("WHATSAPP_CACHE_DIR", ".wwebjs_cache");
+
+  ensureDir(authPath);
+  ensureDir(cachePath);
 
   return new Client({
     authStrategy: new LocalAuth({
       clientId: process.env.WHATSAPP_CLIENT_ID || "delivery-distribuidora",
-      dataPath: path.resolve(process.cwd(), ".wwebjs_auth")
+      dataPath: authPath
     }),
+    webVersionCache: {
+      type: "local",
+      path: cachePath
+    },
     puppeteer: {
       headless: process.env.WHATSAPP_HEADLESS !== "false",
       executablePath,

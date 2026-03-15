@@ -4,7 +4,19 @@ import { fileURLToPath } from "node:url";
 import { initialData } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, "db.json");
+const defaultDataDir = __dirname;
+const dataDir = process.env.DATA_DIR || process.env.APP_DATA_DIR || defaultDataDir;
+const resolvedDataDir = path.resolve(dataDir);
+
+const ensureDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+ensureDir(resolvedDataDir);
+
+const dbPath = path.join(resolvedDataDir, "db.json");
 
 const deepCopy = (value) => JSON.parse(JSON.stringify(value));
 const normalizeMoney = (value) => Number(Number(value || 0).toFixed(2));
@@ -68,3 +80,5 @@ export const createId = (prefix) =>
 export const resetDB = () => {
   writeDB(initialData);
 };
+
+export const getDataDir = () => resolvedDataDir;

@@ -37,5 +37,8 @@ nixPkgs = [
 [phases.install]
 cmds = ["npm install"]
 
+[phases.build]
+cmds = ["npm run build"]
+
 [start]
 cmd = "npm start"
