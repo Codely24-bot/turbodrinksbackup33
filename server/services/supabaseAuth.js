@@ -1,11 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl =
-  process.env.SUPABASE_URL ||
+  (process.env.SUPABASE_URL || "").trim() ||
   (process.env.SUPABASE_PROJECT_ID
-    ? `https://${process.env.SUPABASE_PROJECT_ID}.supabase.co`
+    ? `https://${process.env.SUPABASE_PROJECT_ID}`.trim() + ".supabase.co"
     : "");
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const useSupabaseAuth = Boolean(supabaseUrl && supabaseKey);
 
 const supabase = useSupabaseAuth
