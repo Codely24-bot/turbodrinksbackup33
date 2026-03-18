@@ -43,6 +43,19 @@ const mapSettingsRow = (row) => ({
 const getPublicStoreUrl = () =>
   import.meta.env.VITE_PUBLIC_STORE_URL || window.location.origin;
 
+const getStoreCatalogScore = (store) => {
+  if (!store) {
+    return -1;
+  }
+
+  const products = Array.isArray(store.products) ? store.products.length : 0;
+  const promotions = Array.isArray(store.promotions) ? store.promotions.length : 0;
+  const featuredProducts = Array.isArray(store.featuredProducts) ? store.featuredProducts.length : 0;
+  const categories = Array.isArray(store.categories) ? store.categories.length : 0;
+
+  return products * 1000 + promotions * 100 + featuredProducts * 10 + categories;
+};
+
 const getStoreFromSupabase = async () => {
   if (!supabase) {
     return null;
@@ -127,15 +140,29 @@ const createOrderFromSupabase = async (body) => {
 
 export const api = {
   getStore: async () => {
-    try {
-      return await request("/api/store");
-    } catch (apiError) {
-      const fallbackStore = await getStoreFromSupabase();
-      if (fallbackStore) {
-        return fallbackStore;
-      }
-      throw apiError;
+    const [apiResult, supabaseResult] = await Promise.allSettled([
+      request("/api/store"),
+      getStoreFromSupabase()
+    ]);
+
+    const apiStore = apiResult.status === "fulfilled" ? apiResult.value : null;
+    const supabaseStore = supabaseResult.status === "fulfilled" ? supabaseResult.value : null;
+
+    if (getStoreCatalogScore(supabaseStore) > getStoreCatalogScore(apiStore)) {
+      return supabaseStore;
     }
+
+    if (apiStore) {
+      return apiStore;
+    }
+
+    if (supabaseStore) {
+      return supabaseStore;
+    }
+
+    const apiError = apiResult.status === "rejected" ? apiResult.reason : null;
+    const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;
+    throw apiError || supabaseError || new Error("Nao foi possivel carregar a loja.");
   },
   getWhatsAppStatus: () => request("/api/whatsapp/status"),
   lookupCustomer: (phone) =>
