@@ -126,7 +126,17 @@ const createOrderFromSupabase = async (body) => {
 };
 
 export const api = {
-  getStore: async () => (await getStoreFromSupabase()) || request("/api/store"),
+  getStore: async () => {
+    try {
+      return await request("/api/store");
+    } catch (apiError) {
+      const fallbackStore = await getStoreFromSupabase();
+      if (fallbackStore) {
+        return fallbackStore;
+      }
+      throw apiError;
+    }
+  },
   getWhatsAppStatus: () => request("/api/whatsapp/status"),
   lookupCustomer: (phone) =>
     request("/api/customers/lookup", {
