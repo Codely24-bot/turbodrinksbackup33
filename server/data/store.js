@@ -19,6 +19,19 @@ ensureDir(resolvedDataDir);
 
 const dbPath = path.join(resolvedDataDir, "db.json");
 
+const getDatabaseCatalogScore = (data) => {
+  if (!data) {
+    return -1;
+  }
+
+  const products = Array.isArray(data.products) ? data.products.length : 0;
+  const promotions = Array.isArray(data.promotions) ? data.promotions.length : 0;
+  const customers = Array.isArray(data.customers) ? data.customers.length : 0;
+  const orders = Array.isArray(data.orders) ? data.orders.length : 0;
+
+  return products * 1000 + promotions * 100 + customers * 10 + orders;
+};
+
 const deepCopy = (value) => JSON.parse(JSON.stringify(value));
 const normalizeMoney = (value) => Number(Number(value || 0).toFixed(2));
 const normalizeProduct = (product) => {
@@ -483,10 +496,49 @@ const updateDBSupabase = async (mutator) => {
   return result;
 };
 
-export const readDB = async () => (useSupabase ? readDBSupabase() : readDBFile());
+export const readDB = async () => {
+  if (!useSupabase) {
+    return readDBFile();
+  }
+
+  const [supabaseResult, fileResult] = await Promise.allSettled([
+    readDBSupabase(),
+    Promise.resolve(readDBFile())
+  ]);
+
+  const supabaseData = supabaseResult.status === "fulfilled" ? supabaseResult.value : null;
+  const fileData = fileResult.status === "fulfilled" ? fileResult.value : null;
+
+  if (getDatabaseCatalogScore(fileData) > getDatabaseCatalogScore(supabaseData)) {
+    return fileData;
+  }
+
+  if (supabaseData) {
+    return supabaseData;
+  }
+
+  if (fileData) {
+    return fileData;
+  }
+
+  const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;
+  const fileError = fileResult.status === "rejected" ? fileResult.reason : null;
+  throw supabaseError || fileError || new Error("Nao foi possivel carregar o banco.");
+};
 
 export const updateDB = async (mutator) =>
-  (useSupabase ? updateDBSupabase(mutator) : updateDBFile(mutator));
+  {
+    if (!useSupabase) {
+      return updateDBFile(mutator);
+    }
+
+    const current = await readDB();
+    const draft = deepCopy(current);
+    const result = mutator(draft) ?? draft;
+    await writeDBSupabase(result);
+    writeDBFile(result);
+    return result;
+  };
 
 export const createId = (prefix) =>
   `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -494,6 +546,7 @@ export const createId = (prefix) =>
 export const resetDB = async () => {
   if (useSupabase) {
     await writeDBSupabase(initialData);
+    writeDBFile(initialData);
     return;
   }
 
