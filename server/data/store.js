@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 const dataDir = process.env.DATA_DIR || process.env.APP_DATA_DIR || defaultDataDir;
 const resolvedDataDir = path.resolve(dataDir);
+const backupDir = path.join(resolvedDataDir, "backups");
 
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
@@ -16,6 +17,7 @@ const ensureDir = (dirPath) => {
 };
 
 ensureDir(resolvedDataDir);
+ensureDir(backupDir);
 
 const dbPath = path.join(resolvedDataDir, "db.json");
 
@@ -30,6 +32,58 @@ const getDatabaseCatalogScore = (data) => {
   const orders = Array.isArray(data.orders) ? data.orders.length : 0;
 
   return products * 1000 + promotions * 100 + customers * 10 + orders;
+};
+
+const getTimestampValue = (value) => {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getDatabaseFreshnessScore = (data) => {
+  if (!data) {
+    return 0;
+  }
+
+  const settingsTimestamp = Math.max(
+    getTimestampValue(data.settings?.updatedAt),
+    getTimestampValue(data.settings?.createdAt)
+  );
+
+  const collectionTimestamps = [
+    ...(data.products || []).flatMap((entry) => [entry?.updatedAt, entry?.createdAt]),
+    ...(data.promotions || []).flatMap((entry) => [entry?.updatedAt, entry?.createdAt]),
+    ...(data.customers || []).flatMap((entry) => [entry?.updatedAt, entry?.createdAt]),
+    ...(data.orders || []).flatMap((entry) => [entry?.updatedAt, entry?.createdAt]),
+    ...(data.expenses || []).flatMap((entry) => [entry?.updatedAt, entry?.createdAt, entry?.date]),
+    ...(data.riders || []).flatMap((entry) => [entry?.updatedAt, entry?.createdAt])
+  ].map(getTimestampValue);
+
+  return Math.max(settingsTimestamp, ...collectionTimestamps, 0);
+};
+
+const choosePreferredDatabase = (primary, secondary) => {
+  if (!primary) {
+    return secondary;
+  }
+
+  if (!secondary) {
+    return primary;
+  }
+
+  const primaryFreshness = getDatabaseFreshnessScore(primary);
+  const secondaryFreshness = getDatabaseFreshnessScore(secondary);
+
+  if (primaryFreshness !== secondaryFreshness) {
+    return primaryFreshness > secondaryFreshness ? primary : secondary;
+  }
+
+  return getDatabaseCatalogScore(primary) >= getDatabaseCatalogScore(secondary)
+    ? primary
+    : secondary;
 };
 
 const deepCopy = (value) => JSON.parse(JSON.stringify(value));
@@ -65,6 +119,31 @@ const normalizeDatabase = (data) => ({
   products: Array.isArray(data.products) ? data.products.map(normalizeProduct) : []
 });
 
+const writeBackupFile = (data) => {
+  const backupName = `db-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  const backupPath = path.join(backupDir, backupName);
+  fs.writeFileSync(backupPath, JSON.stringify(normalizeDatabase(data), null, 2));
+
+  const backupFiles = fs
+    .readdirSync(backupDir)
+    .filter((file) => file.endsWith(".json"))
+    .sort()
+    .reverse();
+
+  backupFiles.slice(10).forEach((file) => {
+    fs.unlinkSync(path.join(backupDir, file));
+  });
+};
+
+const getBackupFiles = () =>
+  fs.existsSync(backupDir)
+    ? fs
+        .readdirSync(backupDir)
+        .filter((file) => file.endsWith(".json"))
+        .sort()
+        .reverse()
+    : [];
+
 const ensureDatabase = () => {
   if (!fs.existsSync(dbPath)) {
     fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
@@ -77,7 +156,13 @@ const readDBFile = () => {
 };
 
 const writeDBFile = (data) => {
-  fs.writeFileSync(dbPath, JSON.stringify(normalizeDatabase(data), null, 2));
+  const normalizedData = normalizeDatabase(data);
+
+  if (fs.existsSync(dbPath)) {
+    writeBackupFile(readDBFile());
+  }
+
+  fs.writeFileSync(dbPath, JSON.stringify(normalizedData, null, 2));
 };
 
 const updateDBFile = (mutator) => {
@@ -114,7 +199,9 @@ const mapSettingsRow = (row = {}) => ({
   whatsappNumber: row.whatsapp_number ?? initialData.settings.whatsappNumber,
   quickMessage: row.quick_message ?? initialData.settings.quickMessage,
   supportText: row.support_text ?? initialData.settings.supportText,
-  deliveryFees: row.delivery_fees ?? initialData.settings.deliveryFees ?? {}
+  deliveryFees: row.delivery_fees ?? initialData.settings.deliveryFees ?? {},
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
 });
 
 const mapSettingsToRow = (settings = {}) => ({
@@ -130,7 +217,9 @@ const mapSettingsToRow = (settings = {}) => ({
   whatsapp_number: settings.whatsappNumber || "",
   quick_message: settings.quickMessage || "",
   support_text: settings.supportText || "",
-  delivery_fees: settings.deliveryFees || {}
+  delivery_fees: settings.deliveryFees || {},
+  created_at: settings.createdAt,
+  updated_at: settings.updatedAt
 });
 
 const mapProductRow = (row) => ({
@@ -429,6 +518,35 @@ const deleteAll = async (table, column, sentinel) => {
   }
 };
 
+const syncTableById = async (table, rows, idColumn = "id") => {
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+  const desiredIds = normalizedRows.map((row) => row[idColumn]).filter(Boolean);
+
+  const { data: existingRows, error: fetchError } = await supabase.from(table).select(idColumn);
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  const existingIds = (existingRows || []).map((row) => row[idColumn]).filter(Boolean);
+  const idsToDelete = existingIds.filter((id) => !desiredIds.includes(id));
+
+  if (idsToDelete.length) {
+    const { error: deleteError } = await supabase.from(table).delete().in(idColumn, idsToDelete);
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+  }
+
+  if (normalizedRows.length) {
+    const { error: upsertError } = await supabase
+      .from(table)
+      .upsert(normalizedRows, { onConflict: idColumn });
+    if (upsertError) {
+      throw new Error(upsertError.message);
+    }
+  }
+};
+
 const writeDBSupabase = async (data) => {
   const payload = normalizeDatabase(data);
   const settingsRow = mapSettingsToRow(payload.settings);
@@ -450,40 +568,28 @@ const writeDBSupabase = async (data) => {
     throw new Error(settingsError.message);
   }
 
-  await deleteAll("order_items", "order_id", "__never__");
-  await deleteAll("orders", "id", "__never__");
-  await deleteAll("customers", "id", "__never__");
-  await deleteAll("products", "id", "__never__");
-  await deleteAll("promotions", "id", "__never__");
-  await deleteAll("expenses", "id", "__never__");
-  await deleteAll("riders", "id", "__never__");
+  await syncTableById("products", productsRows);
+  await syncTableById("promotions", promotionsRows);
+  await syncTableById("customers", customersRows);
+  await syncTableById("expenses", expensesRows);
+  await syncTableById("riders", ridersRows);
+  await syncTableById("orders", ordersRows);
 
-  if (productsRows.length) {
-    const { error } = await supabase.from("products").insert(productsRows);
-    if (error) throw new Error(error.message);
-  }
-  if (promotionsRows.length) {
-    const { error } = await supabase.from("promotions").insert(promotionsRows);
-    if (error) throw new Error(error.message);
-  }
-  if (customersRows.length) {
-    const { error } = await supabase.from("customers").insert(customersRows);
-    if (error) throw new Error(error.message);
-  }
   if (ordersRows.length) {
-    const { error } = await supabase.from("orders").insert(ordersRows);
-    if (error) throw new Error(error.message);
+    const orderIds = ordersRows.map((row) => row.id);
+    const { error: deleteOrderItemsError } = await supabase
+      .from("order_items")
+      .delete()
+      .in("order_id", orderIds);
+    if (deleteOrderItemsError) {
+      throw new Error(deleteOrderItemsError.message);
+    }
+  } else {
+    await deleteAll("order_items", "order_id", "__never__");
   }
+
   if (orderItemsRows.length) {
     const { error } = await supabase.from("order_items").insert(orderItemsRows);
-    if (error) throw new Error(error.message);
-  }
-  if (expensesRows.length) {
-    const { error } = await supabase.from("expenses").insert(expensesRows);
-    if (error) throw new Error(error.message);
-  }
-  if (ridersRows.length) {
-    const { error } = await supabase.from("riders").insert(ridersRows);
     if (error) throw new Error(error.message);
   }
 };
@@ -509,16 +615,9 @@ export const readDB = async () => {
   const supabaseData = supabaseResult.status === "fulfilled" ? supabaseResult.value : null;
   const fileData = fileResult.status === "fulfilled" ? fileResult.value : null;
 
-  if (getDatabaseCatalogScore(fileData) > getDatabaseCatalogScore(supabaseData)) {
-    return fileData;
-  }
-
-  if (supabaseData) {
-    return supabaseData;
-  }
-
-  if (fileData) {
-    return fileData;
+  const bestData = choosePreferredDatabase(supabaseData, fileData);
+  if (bestData) {
+    return bestData;
   }
 
   const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;
@@ -526,19 +625,32 @@ export const readDB = async () => {
   throw supabaseError || fileError || new Error("Nao foi possivel carregar o banco.");
 };
 
-export const updateDB = async (mutator) =>
-  {
+let writeQueue = Promise.resolve();
+
+export const updateDB = async (mutator) => {
+  const nextWrite = writeQueue.catch(() => undefined).then(async () => {
     if (!useSupabase) {
       return updateDBFile(mutator);
     }
 
     const current = await readDB();
     const draft = deepCopy(current);
-    const result = mutator(draft) ?? draft;
-    await writeDBSupabase(result);
+    const result = normalizeDatabase(mutator(draft) ?? draft);
+
     writeDBFile(result);
+
+    try {
+      await writeDBSupabase(result);
+    } catch (error) {
+      console.error("[storage-sync-error]", error?.message || error);
+    }
+
     return result;
-  };
+  });
+
+  writeQueue = nextWrite.catch(() => undefined);
+  return nextWrite;
+};
 
 export const createId = (prefix) =>
   `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -554,3 +666,14 @@ export const resetDB = async () => {
 };
 
 export const getDataDir = () => resolvedDataDir;
+export const getStorageMeta = () => ({
+  supabaseStatus: useSupabase ? "enabled" : "disabled",
+  mode: useSupabase ? "supabase+file-mirror" : "file-only",
+  dataDir: resolvedDataDir,
+  dbPath,
+  backupDir,
+  supabaseEnabled: useSupabase,
+  localMirrorOk: fs.existsSync(dbPath),
+  backupCount: getBackupFiles().length,
+  latestBackup: getBackupFiles()[0] || null
+});

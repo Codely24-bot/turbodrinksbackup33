@@ -1501,6 +1501,34 @@ function AdminPage() {
         <MetricCard label="WhatsApp" value={whatsappMeta.label} accent="ruby" hint={whatsappMeta.hint} />
       </section>
 
+      <section className="admin-card">
+        <span className="eyebrow">Armazenamento</span>
+        <h2>Persistencia ativa</h2>
+        <div className="admin-badges">
+          <span className={`status-badge ${dashboard.storage?.supabaseEnabled ? "is-ok" : "is-warn"}`}>
+            {dashboard.storage?.supabaseEnabled ? "Supabase ativo" : "Supabase desligado"}
+          </span>
+          <span className={`status-badge ${dashboard.storage?.localMirrorOk ? "is-ok" : "is-warn"}`}>
+            {dashboard.storage?.localMirrorOk ? "Espelho local ok" : "Espelho local ausente"}
+          </span>
+          <span className={`status-badge ${dashboard.storage?.backupCount ? "is-ok" : "is-warn"}`}>
+            {dashboard.storage?.backupCount ? `${dashboard.storage.backupCount} backups` : "Sem backup"}
+          </span>
+        </div>
+        <p>
+          Modo atual: <strong>{dashboard.storage?.mode || "desconhecido"}</strong>
+        </p>
+        <p>
+          Base local: <strong>{dashboard.storage?.dbPath || "nao informada"}</strong>
+        </p>
+        <p>
+          Backup local: <strong>{dashboard.storage?.backupDir || "nao informado"}</strong>
+        </p>
+        <p>
+          Ultimo backup: <strong>{dashboard.storage?.latestBackup || "ainda nao criado"}</strong>
+        </p>
+      </section>
+
       <section className={`admin-card whatsapp-overview ${whatsappMeta.tone}`}>
         <div className="whatsapp-overview-head">
           <div>

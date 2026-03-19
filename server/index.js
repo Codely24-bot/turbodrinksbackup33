@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
-import { createId, readDB, updateDB } from "./data/store.js";
+import { createId, getStorageMeta, readDB, updateDB } from "./data/store.js";
 import { buildTrackingUrl, getPublicStoreUrl } from "./services/publicLinks.js";
 import { normalizePhone } from "./services/phone.js";
 import {
@@ -256,6 +256,8 @@ const buildDashboard = (db) => {
   const monthlyRevenuePos = monthlyPosOrders.reduce((sum, order) => sum + order.total, 0);
 
   return {
+    settings: db.settings,
+    storage: getStorageMeta(),
     kpis: {
       salesToday: parseMoney(salesToday),
       salesTodayDelivery: parseMoney(salesTodayDelivery),
@@ -404,7 +406,7 @@ io.on("connection", (socket) => {
 });
 
 app.get("/api/health", (_request, response) => {
-  response.json({ ok: true });
+  response.json({ ok: true, storage: getStorageMeta() });
 });
 
 app.get("/api/whatsapp/status", (_request, response) => {
@@ -895,6 +897,21 @@ app.get("/api/admin/debug-token", async (request, response) => {
 app.get("/api/admin/dashboard", requireAdmin, async (_request, response) => {
   const db = await readDB();
   response.json(buildDashboard(db));
+});
+
+app.get("/api/admin/storage", requireAdmin, async (_request, response) => {
+  const db = await readDB();
+  response.json({
+    ...getStorageMeta(),
+    counts: {
+      products: db.products.length,
+      promotions: db.promotions.length,
+      customers: db.customers.length,
+      orders: db.orders.length,
+      expenses: Array.isArray(db.expenses) ? db.expenses.length : 0,
+      riders: Array.isArray(db.riders) ? db.riders.length : 0
+    }
+  });
 });
 
 app.get("/api/admin/orders", requireAdmin, async (_request, response) => {

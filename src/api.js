@@ -56,6 +56,8 @@ const getStoreCatalogScore = (store) => {
   return products * 1000 + promotions * 100 + featuredProducts * 10 + categories;
 };
 
+const withSource = (store, source) => (store ? { ...store, source } : null);
+
 const getStoreFromSupabase = async () => {
   if (!supabase) {
     return null;
@@ -149,15 +151,15 @@ export const api = {
     const supabaseStore = supabaseResult.status === "fulfilled" ? supabaseResult.value : null;
 
     if (getStoreCatalogScore(supabaseStore) > getStoreCatalogScore(apiStore)) {
-      return supabaseStore;
+      return withSource(supabaseStore, "supabase");
     }
 
     if (apiStore) {
-      return apiStore;
+      return withSource(apiStore, "api");
     }
 
     if (supabaseStore) {
-      return supabaseStore;
+      return withSource(supabaseStore, "supabase");
     }
 
     const apiError = apiResult.status === "rejected" ? apiResult.reason : null;
@@ -170,11 +172,37 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ phone })
     }),
-  createOrder: async (body) => (await createOrderFromSupabase(body)) ||
-    request("/api/orders", {
-      method: "POST",
-      body: JSON.stringify(body)
-    }),
+  createOrder: async (body, options = {}) => {
+    const { preferredSource } = options;
+    const submitWithApi = () =>
+      request("/api/orders", {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+
+    if (preferredSource === "api") {
+      return submitWithApi();
+    }
+
+    if (!supabase) {
+      return submitWithApi();
+    }
+
+    try {
+      return await createOrderFromSupabase(body);
+    } catch (error) {
+      const message = String(error?.message || "");
+      const canFallbackToApi =
+        preferredSource !== "supabase" ||
+        /Carrinho invalido|Adicione ao menos um item ao carrinho|Preencha nome/i.test(message);
+
+      if (canFallbackToApi) {
+        return submitWithApi();
+      }
+
+      throw error;
+    }
+  },
   getOrder: (id) => request(`/api/orders/${id}`),
   adminLogin: (credentials) =>
     request("/api/admin/login", {

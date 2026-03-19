@@ -39,6 +39,14 @@ const safeParse = (value, fallback) => {
   }
 };
 
+const sanitizeStoredCart = (value) =>
+  (Array.isArray(value) ? value : [])
+    .map((item) => ({
+      id: String(item?.id || "").trim(),
+      quantity: Number.parseInt(item?.quantity, 10)
+    }))
+    .filter((item) => item.id && Number.isFinite(item.quantity) && item.quantity > 0);
+
 const formatCurrency = (value) => `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 const normalizeProduct = (product) => {
   const salePrice = Number(product?.salePrice ?? product?.price ?? 0);
@@ -113,7 +121,7 @@ function StorefrontPage() {
   });
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
-  const [cart, setCart] = useState(() => safeParse(localStorage.getItem(CART_KEY), []));
+  const [cart, setCart] = useState(() => sanitizeStoredCart(safeParse(localStorage.getItem(CART_KEY), [])));
   const [form, setForm] = useState(() => ({
     ...emptyForm,
     ...safeParse(localStorage.getItem(CUSTOMER_KEY), {})
@@ -196,6 +204,42 @@ function StorefrontPage() {
         .filter(Boolean),
     [cart, productsById]
   );
+
+  useEffect(() => {
+    if (!store.products.length) {
+      return;
+    }
+
+    setCart((current) => {
+      const sanitizedCart = current
+        .map((item) => {
+          const product = productsById[item.id];
+
+          if (!product || !product.active || product.stock <= 0) {
+            return null;
+          }
+
+          return {
+            id: item.id,
+            quantity: Math.min(item.quantity, product.stock)
+          };
+        })
+        .filter(Boolean);
+
+      const changed =
+        sanitizedCart.length !== current.length ||
+        sanitizedCart.some(
+          (item, index) =>
+            item.id !== current[index]?.id || item.quantity !== current[index]?.quantity
+        );
+
+      if (changed) {
+        setFeedback("Atualizamos seu carrinho com os itens disponiveis no momento.");
+      }
+
+      return changed ? sanitizedCart : current;
+    });
+  }, [productsById, store.products]);
 
   const filteredProducts =
     selectedCategory === "Todos"
@@ -298,14 +342,19 @@ function StorefrontPage() {
     setFeedback("");
 
     try {
-      const payload = await api.createOrder({
-        ...form,
-        changeFor: form.needsChange ? form.changeFor : "",
-        items: cartItems.map((item) => ({
-          productId: item.id,
-          quantity: item.quantity
-        }))
-      });
+      const payload = await api.createOrder(
+        {
+          ...form,
+          changeFor: form.needsChange ? form.changeFor : "",
+          items: cartItems.map((item) => ({
+            productId: item.id,
+            quantity: item.quantity
+          }))
+        },
+        {
+          preferredSource: store.source
+        }
+      );
 
       localStorage.setItem(LAST_ORDER_KEY, JSON.stringify(payload.order));
       setLastOrder(payload.order);
