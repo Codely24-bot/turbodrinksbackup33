@@ -179,13 +179,15 @@ const supabaseUrl =
     ? `https://${process.env.SUPABASE_PROJECT_ID}`.trim() + ".supabase.co"
     : "");
 const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-const useSupabase = Boolean(supabaseUrl && supabaseKey);
-const supabase = useSupabase
-  ? createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false },
-      db: { schema: process.env.SUPABASE_SCHEMA || "public" }
-    })
-  : null;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error("Supabase e obrigatorio. Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.");
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false },
+  db: { schema: process.env.SUPABASE_SCHEMA || "public" }
+});
 
 const mapSettingsRow = (row = {}) => ({
   storeName: row.store_name ?? initialData.settings.storeName,
@@ -603,10 +605,6 @@ const updateDBSupabase = async (mutator) => {
 };
 
 export const readDB = async () => {
-  if (!useSupabase) {
-    return readDBFile();
-  }
-
   const [supabaseResult, fileResult] = await Promise.allSettled([
     readDBSupabase(),
     Promise.resolve(readDBFile())
@@ -629,10 +627,6 @@ let writeQueue = Promise.resolve();
 
 export const updateDB = async (mutator) => {
   const nextWrite = writeQueue.catch(() => undefined).then(async () => {
-    if (!useSupabase) {
-      return updateDBFile(mutator);
-    }
-
     const current = await readDB();
     const draft = deepCopy(current);
     const result = normalizeDatabase(mutator(draft) ?? draft);
@@ -656,23 +650,18 @@ export const createId = (prefix) =>
   `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export const resetDB = async () => {
-  if (useSupabase) {
-    await writeDBSupabase(initialData);
-    writeDBFile(initialData);
-    return;
-  }
-
+  await writeDBSupabase(initialData);
   writeDBFile(initialData);
 };
 
 export const getDataDir = () => resolvedDataDir;
 export const getStorageMeta = () => ({
-  supabaseStatus: useSupabase ? "enabled" : "disabled",
-  mode: useSupabase ? "supabase+file-mirror" : "file-only",
+  supabaseStatus: "enabled",
+  mode: "supabase+file-mirror",
   dataDir: resolvedDataDir,
   dbPath,
   backupDir,
-  supabaseEnabled: useSupabase,
+  supabaseEnabled: true,
   localMirrorOk: fs.existsSync(dbPath),
   backupCount: getBackupFiles().length,
   latestBackup: getBackupFiles()[0] || null
