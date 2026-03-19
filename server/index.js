@@ -29,8 +29,18 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
+const packageJsonPath = path.join(rootDir, "package.json");
 const port = Number(process.env.PORT || 4000);
 const host = process.env.HOST || "0.0.0.0";
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+const appVersion = packageJson.version || "0.0.0";
+const appCommit =
+  process.env.RAILWAY_GIT_COMMIT_SHA ||
+  process.env.RAILWAY_GIT_COMMIT_ID ||
+  process.env.GITHUB_SHA ||
+  process.env.COMMIT_SHA ||
+  "unknown";
+const startedAt = new Date().toISOString();
 
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "123456";
@@ -406,7 +416,13 @@ io.on("connection", (socket) => {
 });
 
 app.get("/api/health", (_request, response) => {
-  response.json({ ok: true, storage: getStorageMeta() });
+  response.json({
+    ok: true,
+    version: appVersion,
+    commit: appCommit,
+    startedAt,
+    storage: getStorageMeta()
+  });
 });
 
 app.get("/api/whatsapp/status", (_request, response) => {
