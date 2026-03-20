@@ -911,29 +911,28 @@ function AdminPage() {
     setLoading(true);
     setMessage("");
     try {
-      if (loginForm.username === "admin" || !supabase) {
-        const payload = await api.adminLogin(loginForm);
-        localStorage.setItem(TOKEN_KEY, payload.token);
-        setToken(payload.token);
-        return;
+      const identifier = loginForm.username.trim();
+      const shouldTrySupabaseFirst = Boolean(supabase && identifier.includes("@"));
+
+      if (shouldTrySupabaseFirst) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: identifier,
+          password: loginForm.password
+        });
+
+        if (!error && data?.session?.access_token) {
+          localStorage.setItem(TOKEN_KEY, data.session.access_token);
+          setToken(data.session.access_token);
+          return;
+        }
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginForm.username.trim(),
+      const payload = await api.adminLogin({
+        username: identifier,
         password: loginForm.password
       });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      const accessToken = data?.session?.access_token;
-      if (!accessToken) {
-        throw new Error("Nao foi possivel iniciar sessao.");
-      }
-
-      localStorage.setItem(TOKEN_KEY, accessToken);
-      setToken(accessToken);
+      localStorage.setItem(TOKEN_KEY, payload.token);
+      setToken(payload.token);
     } catch (error) {
       setLoading(false);
       setMessage(error.message);
@@ -1241,7 +1240,7 @@ function AdminPage() {
           ) : null}
           <div className="field-grid single">
             <label>
-              Email
+              Email ou usuario
               <input
                 type="email"
                 value={loginForm.username}
