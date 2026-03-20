@@ -778,11 +778,11 @@ function AdminPage() {
 
   useEffect(() => {
     setVisibleProductCount(DEFAULT_PAGE_SIZE);
-  }, [productCatalog.length]);
+  }, [products.length]);
 
   useEffect(() => {
     setVisiblePromotionCount(DEFAULT_PAGE_SIZE);
-  }, [promotionsCatalog.length]);
+  }, [promotions.length]);
 
   useEffect(() => {
     if (!token) {
