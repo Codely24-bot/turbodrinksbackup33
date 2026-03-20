@@ -606,44 +606,70 @@ function AdminPage() {
     setLoadError("");
 
     try {
-      const requests = [
-        api.getDashboard(currentToken),
-        api.getOrders(currentToken, orderFetchLimit),
-        api.getCustomers(currentToken, customerFetchLimit),
-        api.getProducts(currentToken, productFetchLimit),
-        api.getPromotions(currentToken, promotionFetchLimit),
-        api.getAdminProfile(currentToken)
+      const requestEntries = [
+        ["dashboard", api.getDashboard(currentToken)],
+        ["orders", api.getOrders(currentToken, orderFetchLimit)],
+        ["customers", api.getCustomers(currentToken, customerFetchLimit)],
+        ["products", api.getProducts(currentToken, productFetchLimit)],
+        ["promotions", api.getPromotions(currentToken, promotionFetchLimit)],
+        ["profile", api.getAdminProfile(currentToken)]
       ];
 
       if (includeReports) {
-        requests.push(api.getReports(currentToken, reportsDays));
+        requestEntries.push(["reports", api.getReports(currentToken, reportsDays)]);
       }
 
-      const [
-        dashboardPayload,
-        ordersPayload,
-        customersPayload,
-        productsPayload,
-        promotionsPayload,
-        profilePayload,
-        reportsPayload
-      ] = await Promise.all(requests);
+      const settled = await Promise.allSettled(requestEntries.map(([, promise]) => promise));
+      const fulfilledCount = settled.filter((entry) => entry.status === "fulfilled").length;
 
-      setDashboard(dashboardPayload);
-      setOrders(ordersPayload);
-      setCustomers(customersPayload);
-      setProducts(productsPayload);
-      setPromotions(promotionsPayload);
-      setAdminProfile(profilePayload?.profile || null);
-      setAdminConfirmed(Boolean(profilePayload?.confirmed));
-      if (includeReports) {
-        setReports(reportsPayload);
+      if (!fulfilledCount) {
+        const firstError = settled.find((entry) => entry.status === "rejected");
+        throw firstError?.reason || new Error("Falha ao carregar o painel.");
       }
-      setFeeRows(
-        Object.entries(dashboardPayload.deliveryFees || {}).map(([name, value]) =>
-          createFeeRow({ name, value: String(value ?? "") })
-        )
+
+      const payloads = Object.fromEntries(
+        requestEntries.map(([key], index) => {
+          const result = settled[index];
+          return [key, result.status === "fulfilled" ? result.value : null];
+        })
       );
+
+      const failedMessages = settled
+        .filter((entry) => entry.status === "rejected")
+        .map((entry) => entry.reason?.message)
+        .filter(Boolean);
+
+      if (payloads.dashboard) {
+        setDashboard(payloads.dashboard);
+        setFeeRows(
+          Object.entries(payloads.dashboard.deliveryFees || {}).map(([name, value]) =>
+            createFeeRow({ name, value: String(value ?? "") })
+          )
+        );
+      }
+      if (payloads.orders) {
+        setOrders(payloads.orders);
+      }
+      if (payloads.customers) {
+        setCustomers(payloads.customers);
+      }
+      if (payloads.products) {
+        setProducts(payloads.products);
+      }
+      if (payloads.promotions) {
+        setPromotions(payloads.promotions);
+      }
+      if (payloads.profile) {
+        setAdminProfile(payloads.profile?.profile || null);
+        setAdminConfirmed(Boolean(payloads.profile?.confirmed));
+      }
+      if (includeReports && payloads.reports) {
+        setReports(payloads.reports);
+      }
+
+      if (failedMessages.length) {
+        setMessage(`Alguns dados do painel nao carregaram: ${failedMessages[0]}`);
+      }
     } catch (error) {
       setLoadError(error.message || "Falha ao carregar o painel.");
       throw error;
