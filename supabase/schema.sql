@@ -14,6 +14,22 @@ create table if not exists settings (
   quick_message text,
   support_text text,
   delivery_fees jsonb not null default '{}'::jsonb,
+  stock_low_threshold integer not null default 5,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists categories (
+  id text primary key,
+  name text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists payment_methods (
+  value text primary key,
+  label text not null,
+  active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -125,10 +141,72 @@ create table if not exists expenses (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists payables (
+  id text primary key,
+  title text not null,
+  category text,
+  amount numeric not null default 0,
+  due_date timestamptz not null default now(),
+  note text,
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists receivables (
+  id text primary key,
+  title text not null,
+  customer_name text,
+  customer_phone text,
+  category text,
+  amount numeric not null default 0,
+  due_date timestamptz not null default now(),
+  note text,
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists cash_sessions (
+  id text primary key,
+  opened_at timestamptz not null,
+  closed_at timestamptz,
+  opening_balance numeric not null default 0,
+  expected_balance numeric not null default 0,
+  counted_balance numeric,
+  difference numeric,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists cash_movements (
+  id text primary key,
+  session_id text not null references cash_sessions(id) on delete cascade,
+  type text not null,
+  amount numeric not null default 0,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists orders_created_at_idx on orders (created_at desc);
 create index if not exists orders_status_idx on orders (status);
 create index if not exists order_items_order_id_idx on order_items (order_id);
 create index if not exists customers_phone_idx on customers (phone);
+create index if not exists payables_due_date_idx on payables (due_date desc);
+create index if not exists receivables_due_date_idx on receivables (due_date desc);
+create index if not exists cash_movements_session_id_idx on cash_movements (session_id);
+
+create table if not exists admin_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  owner_name text not null,
+  store_name text not null,
+  doc_id text not null,
+  email text not null,
+  created_at timestamptz not null default now()
+);
 
 alter table settings enable row level security;
 alter table products enable row level security;
@@ -136,6 +214,11 @@ alter table promotions enable row level security;
 alter table orders enable row level security;
 alter table order_items enable row level security;
 alter table customers enable row level security;
+alter table admin_profiles enable row level security;
+
+drop policy if exists "public read settings" on settings;
+drop policy if exists "public read products" on products;
+drop policy if exists "public read promotions" on promotions;
 
 create policy "public read settings"
   on settings for select
@@ -367,17 +450,8 @@ $$;
 
 grant execute on function create_order(jsonb) to anon, authenticated;
 
-create table if not exists admin_profiles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique references auth.users(id) on delete cascade,
-  owner_name text not null,
-  store_name text not null,
-  doc_id text not null,
-  email text not null,
-  created_at timestamptz not null default now()
-);
-
-alter table admin_profiles enable row level security;
+drop policy if exists "admin profiles read own" on admin_profiles;
+drop policy if exists "admin profiles update own" on admin_profiles;
 
 create policy "admin profiles read own"
   on admin_profiles for select

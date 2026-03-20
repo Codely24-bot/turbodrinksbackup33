@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { getDataDir, readDB } from "../data/store.js";
+import { createId, getDataDir, readDB, updateDB } from "../data/store.js";
 import { normalizePhone, phonesMatch, toWhatsAppChatId } from "./phone.js";
 import {
   STATUS_LABELS,
@@ -54,7 +54,7 @@ const normalizeText = (text = "") =>
     .trim();
 
 const getSettings = async () => (await readDB()).settings;
-const getStoreName = async () => (await getSettings()).storeName || "Distribuidora Delivery";
+const getStoreName = async () => (await getSettings()).storeName || "Fortin Delivery";
 const getOpeningHoursText = async () =>
   (await getSettings()).openingHoursText ||
   "Horario de funcionamento indisponivel no momento. Digite menu para voltar.";
@@ -100,7 +100,8 @@ const buildMenuMessage = async () =>
     "2. Bairros atendidos",
     "3. Horario de funcionamento",
     "4. Endereco",
-    "5. Status do meu pedido"
+    "5. Status do meu pedido",
+    "6. Falar com atendente"
   ].join("\n");
 
 const buildCatalogMessage = async () =>
@@ -248,6 +249,16 @@ const handleIncomingMessage = async (message) => {
   }
 
   const session = sessions.get(message.from);
+  const pausedUntil = Number(session.pausedUntil || 0);
+
+  if (pausedUntil > now) {
+    if (text === "menu") {
+      session.pausedUntil = 0;
+      await sendTypingAndMessage(chat, message.from, await buildMenuMessage());
+      session.step = "menu";
+    }
+    return;
+  }
 
   const menuTriggers = /^(menu|oi|ola|opa|bom dia|boa tarde|boa noite|pedido)$/i;
   const statusTriggers = ["status", "acompanhar", "meu pedido", "pedido saiu", "pedido chegou"];
@@ -352,6 +363,48 @@ const handleIncomingMessage = async (message) => {
 
     if (text === "5") {
       await handleOrderLookup(message, chat);
+      return;
+    }
+
+    if (text === "6") {
+      const nowIso = new Date().toISOString();
+      await updateDB((draft) => {
+        draft.supportRequests = Array.isArray(draft.supportRequests) ? draft.supportRequests : [];
+        const existing = draft.supportRequests.find(
+          (entry) => entry.phone === normalizePhone(message.from) && entry.status === "pending"
+        );
+
+        if (existing) {
+          existing.requestedAt = nowIso;
+          existing.updatedAt = nowIso;
+          existing.note = "Cliente pediu atendimento humano pelo WhatsApp.";
+          return draft;
+        }
+
+        draft.supportRequests.push({
+          id: createId("support"),
+          customerName: chat?.name || "",
+          phone: normalizePhone(message.from),
+          source: "whatsapp",
+          status: "pending",
+          note: "Cliente pediu atendimento humano pelo WhatsApp.",
+          requestedAt: nowIso,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        });
+        return draft;
+      });
+      session.pausedUntil = Date.now() + 5 * 60 * 1000;
+      session.step = "human_support";
+      await sendTypingAndMessage(
+        chat,
+        message.from,
+        [
+          "Perfeito. Vou pausar o robo por *5 minutos* para um atendente humano continuar por aqui.",
+          "",
+          "Se quiser voltar antes, e so digitar *menu*."
+        ].join("\n")
+      );
       return;
     }
   }

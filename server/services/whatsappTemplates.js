@@ -33,7 +33,7 @@ export const PAYMENT_LABELS = {
 export const formatCurrency = (value) =>
   `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 
-export const buildOrderStatusMessage = (order, status, storeName = "Distribuidora Delivery") => {
+export const buildOrderStatusMessage = (order, status, storeName = "Fortin Delivery") => {
   const trackingUrl = buildTrackingUrl(order.id);
   const lines = [
     `*${storeName}*`,
@@ -60,7 +60,7 @@ export const buildOrderStatusMessage = (order, status, storeName = "Distribuidor
   return lines.join("\n");
 };
 
-export const buildOrderLookupMessage = (order, storeName = "Distribuidora Delivery") => {
+export const buildOrderLookupMessage = (order, storeName = "Fortin Delivery") => {
   const trackingUrl = buildTrackingUrl(order.id);
 
   return [

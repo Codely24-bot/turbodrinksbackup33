@@ -88,6 +88,61 @@ const choosePreferredDatabase = (primary, secondary) => {
 
 const deepCopy = (value) => JSON.parse(JSON.stringify(value));
 const normalizeMoney = (value) => Number(Number(value || 0).toFixed(2));
+const normalizeCategory = (category) => String(category || "").trim();
+const normalizePaymentMethod = (method) => ({
+  value: String(method?.value || "").trim(),
+  label: String(method?.label || method?.value || "").trim(),
+  active: method?.active ?? true
+});
+const normalizeFinancialEntry = (entry) => ({
+  ...entry,
+  title: String(entry?.title || "").trim(),
+  category: String(entry?.category || "").trim(),
+  amount: normalizeMoney(entry?.amount),
+  status: String(entry?.status || "pending").trim() || "pending"
+});
+const normalizeSupportRequest = (entry) => ({
+  ...entry,
+  customerName: String(entry?.customerName || "").trim(),
+  phone: String(entry?.phone || "").trim(),
+  source: String(entry?.source || "whatsapp").trim() || "whatsapp",
+  status: String(entry?.status || "pending").trim() || "pending",
+  note: String(entry?.note || "").trim()
+});
+const normalizeCashMovement = (movement) => ({
+  ...movement,
+  amount: normalizeMoney(movement?.amount),
+  type: String(movement?.type || "").trim(),
+  note: String(movement?.note || "").trim()
+});
+const normalizeCashSession = (session) => {
+  if (!session) {
+    return null;
+  }
+
+  return {
+    ...session,
+    openingBalance: normalizeMoney(session?.openingBalance),
+    expectedBalance: normalizeMoney(session?.expectedBalance),
+    countedBalance:
+      session?.countedBalance === null || session?.countedBalance === undefined
+        ? null
+        : normalizeMoney(session?.countedBalance),
+    difference:
+      session?.difference === null || session?.difference === undefined
+        ? null
+        : normalizeMoney(session?.difference),
+    movements: Array.isArray(session?.movements)
+      ? session.movements.map(normalizeCashMovement)
+      : []
+  };
+};
+const normalizeCashRegister = (cashRegister) => ({
+  currentSession: normalizeCashSession(cashRegister?.currentSession),
+  history: Array.isArray(cashRegister?.history)
+    ? cashRegister.history.map(normalizeCashSession)
+    : []
+});
 const normalizeProduct = (product) => {
   const salePrice = normalizeMoney(product.salePrice ?? product.price);
   const legacyOriginalPrice = Number(product.originalPrice);
@@ -112,12 +167,52 @@ const normalizeRider = (rider) => ({
   ...rider,
   active: rider?.active ?? true
 });
-const normalizeDatabase = (data) => ({
+const normalizeDatabase = (data = {}) => ({
   ...data,
+  categories: Array.isArray(data.categories)
+    ? data.categories.map(normalizeCategory).filter(Boolean)
+    : [],
+  paymentMethods: Array.isArray(data.paymentMethods)
+    ? data.paymentMethods
+        .map(normalizePaymentMethod)
+        .filter((method) => method.value && method.label)
+    : [],
   expenses: Array.isArray(data.expenses) ? data.expenses.map(normalizeExpense) : [],
+  payables: Array.isArray(data.payables) ? data.payables.map(normalizeFinancialEntry) : [],
+  receivables: Array.isArray(data.receivables) ? data.receivables.map(normalizeFinancialEntry) : [],
+  supportRequests: Array.isArray(data.supportRequests)
+    ? data.supportRequests.map(normalizeSupportRequest)
+    : [],
   riders: Array.isArray(data.riders) ? data.riders.map(normalizeRider) : [],
+  cashRegister: normalizeCashRegister(data.cashRegister),
   products: Array.isArray(data.products) ? data.products.map(normalizeProduct) : []
 });
+
+const mergeLocalOnlyFields = (preferred, localFile) => {
+  const normalizedPreferred = normalizeDatabase(preferred);
+  const normalizedLocalFile = normalizeDatabase(localFile);
+
+  return normalizeDatabase({
+    ...normalizedPreferred,
+    categories: normalizedLocalFile.categories.length
+      ? normalizedLocalFile.categories
+      : normalizedPreferred.categories,
+    paymentMethods: normalizedLocalFile.paymentMethods.length
+      ? normalizedLocalFile.paymentMethods
+      : normalizedPreferred.paymentMethods,
+    payables: normalizedLocalFile.payables.length
+      ? normalizedLocalFile.payables
+      : normalizedPreferred.payables,
+    receivables: normalizedLocalFile.receivables.length
+      ? normalizedLocalFile.receivables
+      : normalizedPreferred.receivables,
+    cashRegister:
+      normalizedLocalFile.cashRegister?.currentSession ||
+      normalizedLocalFile.cashRegister?.history?.length
+        ? normalizedLocalFile.cashRegister
+        : normalizedPreferred.cashRegister
+  });
+};
 
 const writeBackupFile = (data) => {
   const backupName = `db-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
@@ -226,6 +321,9 @@ const mapSettingsRow = (row = {}) => ({
   quickMessage: row.quick_message ?? initialData.settings.quickMessage,
   supportText: row.support_text ?? initialData.settings.supportText,
   deliveryFees: row.delivery_fees ?? initialData.settings.deliveryFees ?? {},
+  stockLowThreshold: Number(
+    row.stock_low_threshold ?? initialData.settings.stockLowThreshold ?? 5
+  ),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -244,8 +342,38 @@ const mapSettingsToRow = (settings = {}) => ({
   quick_message: settings.quickMessage || "",
   support_text: settings.supportText || "",
   delivery_fees: settings.deliveryFees || {},
+  stock_low_threshold: Number(settings.stockLowThreshold ?? 5),
   created_at: settings.createdAt,
   updated_at: settings.updatedAt
+});
+
+const mapCategoryRow = (row) => ({
+  id: row.id,
+  name: row.name,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapCategoryToRow = (category, index) => ({
+  id: `category-${index + 1}-${String(category || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")}`,
+  name: String(category || "").trim()
+});
+
+const mapPaymentMethodRow = (row) => ({
+  value: row.value,
+  label: row.label,
+  active: row.active ?? true,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapPaymentMethodToRow = (method) => ({
+  value: String(method.value || "").trim(),
+  label: String(method.label || method.value || "").trim(),
+  active: method.active ?? true
 });
 
 const mapProductRow = (row) => ({
@@ -438,6 +566,58 @@ const mapExpenseToRow = (expense) => ({
   updated_at: expense.updatedAt
 });
 
+const mapPayableRow = (row) => ({
+  id: row.id,
+  title: row.title,
+  category: row.category || "",
+  amount: Number(row.amount ?? 0),
+  dueDate: row.due_date,
+  note: row.note || "",
+  status: row.status || "pending",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapPayableToRow = (entry) => ({
+  id: entry.id,
+  title: entry.title,
+  category: entry.category || "",
+  amount: Number(entry.amount ?? 0),
+  due_date: entry.dueDate || entry.createdAt,
+  note: entry.note || "",
+  status: entry.status || "pending",
+  created_at: entry.createdAt,
+  updated_at: entry.updatedAt
+});
+
+const mapReceivableRow = (row) => ({
+  id: row.id,
+  title: row.title,
+  customerName: row.customer_name || "",
+  customerPhone: row.customer_phone || "",
+  category: row.category || "",
+  amount: Number(row.amount ?? 0),
+  dueDate: row.due_date,
+  note: row.note || "",
+  status: row.status || "pending",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapReceivableToRow = (entry) => ({
+  id: entry.id,
+  title: entry.title,
+  customer_name: entry.customerName || "",
+  customer_phone: entry.customerPhone || "",
+  category: entry.category || "",
+  amount: Number(entry.amount ?? 0),
+  due_date: entry.dueDate || entry.createdAt,
+  note: entry.note || "",
+  status: entry.status || "pending",
+  created_at: entry.createdAt,
+  updated_at: entry.updatedAt
+});
+
 const mapRiderRow = (row) => ({
   id: row.id,
   name: row.name,
@@ -454,6 +634,62 @@ const mapRiderToRow = (rider) => ({
   active: rider.active ?? true,
   created_at: rider.createdAt,
   updated_at: rider.updatedAt
+});
+
+const mapCashSessionRow = (row) => ({
+  id: row.id,
+  openedAt: row.opened_at,
+  closedAt: row.closed_at,
+  openingBalance: Number(row.opening_balance ?? 0),
+  expectedBalance: Number(row.expected_balance ?? 0),
+  countedBalance:
+    row.counted_balance === null || row.counted_balance === undefined
+      ? null
+      : Number(row.counted_balance),
+  difference:
+    row.difference === null || row.difference === undefined ? null : Number(row.difference),
+  note: row.note || "",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapCashSessionToRow = (session) => ({
+  id: session.id,
+  opened_at: session.openedAt,
+  closed_at: session.closedAt,
+  opening_balance: Number(session.openingBalance ?? 0),
+  expected_balance: Number(session.expectedBalance ?? 0),
+  counted_balance:
+    session.countedBalance === null || session.countedBalance === undefined
+      ? null
+      : Number(session.countedBalance),
+  difference:
+    session.difference === null || session.difference === undefined
+      ? null
+      : Number(session.difference),
+  note: session.note || "",
+  created_at: session.createdAt || session.openedAt,
+  updated_at: session.updatedAt || session.closedAt || session.openedAt
+});
+
+const mapCashMovementRow = (row) => ({
+  id: row.id,
+  sessionId: row.session_id,
+  type: row.type,
+  amount: Number(row.amount ?? 0),
+  note: row.note || "",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapCashMovementToRow = (movement, sessionId) => ({
+  id: movement.id,
+  session_id: sessionId,
+  type: movement.type || "",
+  amount: Number(movement.amount ?? 0),
+  note: movement.note || "",
+  created_at: movement.createdAt,
+  updated_at: movement.updatedAt || movement.createdAt
 });
 
 const ensureSettingsRow = async () => {
@@ -497,7 +733,13 @@ const readDBSupabase = async () => {
     ordersRes,
     orderItemsRes,
     expensesRes,
-    ridersRes
+    ridersRes,
+    categoriesRes,
+    paymentMethodsRes,
+    payablesRes,
+    receivablesRes,
+    cashSessionsRes,
+    cashMovementsRes
   ] = await Promise.all([
     ensureSettingsRow().then((data) => ({ data })),
     supabase.from("products").select("*"),
@@ -506,7 +748,13 @@ const readDBSupabase = async () => {
     supabase.from("orders").select("*"),
     supabase.from("order_items").select("*"),
     supabase.from("expenses").select("*"),
-    supabase.from("riders").select("*")
+    supabase.from("riders").select("*"),
+    supabase.from("categories").select("*"),
+    supabase.from("payment_methods").select("*"),
+    supabase.from("payables").select("*"),
+    supabase.from("receivables").select("*"),
+    supabase.from("cash_sessions").select("*"),
+    supabase.from("cash_movements").select("*")
   ]);
 
   const errors = [
@@ -516,7 +764,13 @@ const readDBSupabase = async () => {
     ordersRes.error,
     orderItemsRes.error,
     expensesRes.error,
-    ridersRes.error
+    ridersRes.error,
+    categoriesRes.error,
+    paymentMethodsRes.error,
+    payablesRes.error,
+    receivablesRes.error,
+    cashSessionsRes.error,
+    cashMovementsRes.error
   ].filter(Boolean);
 
   if (errors.length) {
@@ -530,8 +784,25 @@ const readDBSupabase = async () => {
     orderItemsByOrder.set(item.order_id, list);
   });
 
+  const cashMovementsBySession = new Map();
+  (cashMovementsRes.data || []).forEach((movement) => {
+    const list = cashMovementsBySession.get(movement.session_id) || [];
+    list.push(mapCashMovementRow(movement));
+    cashMovementsBySession.set(movement.session_id, list);
+  });
+
+  const cashSessions = (cashSessionsRes.data || []).map((session) => ({
+    ...mapCashSessionRow(session),
+    movements: cashMovementsBySession.get(session.id) || []
+  }));
+
+  const currentSession = cashSessions.find((session) => !session.closedAt) || null;
+  const historySessions = cashSessions.filter((session) => session.closedAt);
+
   const db = {
     settings: settingsRes.data,
+    categories: (categoriesRes.data || []).map((row) => mapCategoryRow(row).name),
+    paymentMethods: (paymentMethodsRes.data || []).map(mapPaymentMethodRow),
     products: (productsRes.data || []).map(mapProductRow),
     promotions: (promotionsRes.data || []).map(mapPromotionRow),
     customers: (customersRes.data || []).map(mapCustomerRow),
@@ -539,7 +810,13 @@ const readDBSupabase = async () => {
       mapOrderRow(order, orderItemsByOrder.get(order.id) || [])
     ),
     expenses: (expensesRes.data || []).map(mapExpenseRow),
-    riders: (ridersRes.data || []).map(mapRiderRow)
+    payables: (payablesRes.data || []).map(mapPayableRow),
+    receivables: (receivablesRes.data || []).map(mapReceivableRow),
+    riders: (ridersRes.data || []).map(mapRiderRow),
+    cashRegister: {
+      currentSession,
+      history: historySessions
+    }
   };
 
   return normalizeDatabase(db);
@@ -601,7 +878,19 @@ const writeDBSupabase = async (data) => {
   const customersRows = (payload.customers || []).map(mapCustomerToRow);
   const ordersRows = (payload.orders || []).map(mapOrderToRow);
   const expensesRows = (payload.expenses || []).map(mapExpenseToRow);
+  const categoriesRows = (payload.categories || []).map(mapCategoryToRow);
+  const paymentMethodsRows = (payload.paymentMethods || []).map(mapPaymentMethodToRow);
+  const payablesRows = (payload.payables || []).map(mapPayableToRow);
+  const receivablesRows = (payload.receivables || []).map(mapReceivableToRow);
   const ridersRows = (payload.riders || []).map(mapRiderToRow);
+  const cashSessions = [
+    ...(payload.cashRegister?.currentSession ? [payload.cashRegister.currentSession] : []),
+    ...(payload.cashRegister?.history || [])
+  ];
+  const cashSessionsRows = cashSessions.map(mapCashSessionToRow);
+  const cashMovementsRows = cashSessions.flatMap((session) =>
+    (session.movements || []).map((movement) => mapCashMovementToRow(movement, session.id))
+  );
   const orderItemsRows = (payload.orders || []).flatMap((order) =>
     (order.items || []).map((item) => mapOrderItemToRow(order.id, item))
   );
@@ -617,8 +906,14 @@ const writeDBSupabase = async (data) => {
   await syncTableById("products", productsRows);
   await syncTableById("promotions", promotionsRows);
   await syncTableById("customers", customersRows);
+  await syncTableById("categories", categoriesRows);
+  await syncTableById("payment_methods", paymentMethodsRows, "value");
   await syncTableById("expenses", expensesRows);
+  await syncTableById("payables", payablesRows);
+  await syncTableById("receivables", receivablesRows);
   await syncTableById("riders", ridersRows);
+  await syncTableById("cash_sessions", cashSessionsRows);
+  await syncTableById("cash_movements", cashMovementsRows);
   await syncTableById("orders", ordersRows);
 
   if (ordersRows.length) {
@@ -682,6 +977,7 @@ export const bootstrapStorage = async () => {
     const supabaseData = supabaseResult.status === "fulfilled" ? supabaseResult.value : null;
     const fileData = fileResult.status === "fulfilled" ? fileResult.value : null;
     const preferredData = choosePreferredDatabase(supabaseData, fileData);
+    const mergedPreferredData = mergeLocalOnlyFields(preferredData, fileData);
 
     if (!preferredData) {
       throw supabaseResult.status === "rejected"
@@ -691,10 +987,10 @@ export const bootstrapStorage = async () => {
           : new Error("Nao foi possivel inicializar o armazenamento.");
     }
 
-    writeDBFile(preferredData);
+    writeDBFile(mergedPreferredData);
 
     if (preferredData !== supabaseData) {
-      await writeDBSupabase(preferredData);
+      await writeDBSupabase(mergedPreferredData);
       return { synced: true, mode: "supabase+file-mirror" };
     }
 
@@ -721,7 +1017,7 @@ export const readDB = async () => {
 
   const bestData = choosePreferredDatabase(supabaseData, fileData);
   if (bestData) {
-    return bestData;
+    return mergeLocalOnlyFields(bestData, fileData);
   }
 
   const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;

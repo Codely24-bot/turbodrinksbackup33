@@ -5,7 +5,7 @@ const daysAgo = (days, hour = 18) =>
 
 export const initialData = {
   settings: {
-    storeName: "Turbo Drinks",
+    storeName: "Fortin Delivery",
     tagline: "Geladas em minutos, do jeito que a quebrada gosta.",
     bannerTitle: "Delivery de bebidas com pedido turbo e rastreio ao vivo",
     bannerSubtitle:
@@ -14,9 +14,9 @@ export const initialData = {
     city: "Vila Santa Rita - Belo Horizonte",
     mapsUrl: "https://maps.app.goo.gl/3PtSGsGTevirUPYKA",
     openingHoursText:
-      "*Horario de funcionamento*\n\nQuarta a Sexta: 10h as 22h\nSabado: 10h as 23:59\nDomingo: 10h as 23:59\n\nEstamos esperando seu pedido!",
+      "*Horario de funcionamento*\n\nTerca e Quarta: 10:00 as 22:00\nSexta: 10:00 as 23:59\nSabado: 10:00 as 23:59\nDomingo: 10:00 as 23:59\n\nEstamos esperando seu pedido!",
     whatsappNumber: "5511999999999",
-    quickMessage: "Quero fazer um pedido rapido na Turbo Drinks",
+    quickMessage: "Quero fazer um pedido rapido na Fortin Delivery",
     supportText: "Atendimento ate 02h com foco em entregas expressas.",
     deliveryFees: {
       Centro: 5,
@@ -25,10 +25,34 @@ export const initialData = {
       Industrial: 8,
       Universitario: 4,
       "Parque das Flores": 9
-    }
+    },
+    stockLowThreshold: 5
   },
+  categories: [
+    "Cervejas",
+    "Refrigerantes",
+    "Energeticos",
+    "Aguas",
+    "Sucos",
+    "Destilados",
+    "Combos e promocoes"
+  ],
+  paymentMethods: [
+    { value: "dinheiro", label: "Dinheiro", active: true },
+    { value: "pix_key", label: "Chave PIX", active: true },
+    { value: "pix_qr", label: "Chave PIX QR Code", active: true },
+    { value: "credit_card", label: "Cartao de Credito", active: true },
+    { value: "debit_card", label: "Cartao de Debito", active: true }
+  ],
   expenses: [],
+  payables: [],
+  receivables: [],
+  supportRequests: [],
   riders: [],
+  cashRegister: {
+    currentSession: null,
+    history: []
+  },
   products: [
     {
       id: "prod-heineken-ln",

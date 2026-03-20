@@ -67,7 +67,19 @@ const mapSettingsToRow = (settings = {}) => ({
   whatsapp_number: settings.whatsappNumber || "",
   quick_message: settings.quickMessage || "",
   support_text: settings.supportText || "",
-  delivery_fees: settings.deliveryFees || {}
+  delivery_fees: settings.deliveryFees || {},
+  stock_low_threshold: Number(settings.stockLowThreshold ?? 5)
+});
+
+const mapCategoryToRow = (category, index) => ({
+  id: `category-${index + 1}-${String(category || "").trim().toLowerCase().replace(/\s+/g, "-")}`,
+  name: String(category || "").trim()
+});
+
+const mapPaymentMethodToRow = (method) => ({
+  value: String(method.value || "").trim(),
+  label: String(method.label || method.value || "").trim(),
+  active: method.active ?? true
 });
 
 const mapProductToRow = (product) => {
@@ -182,6 +194,65 @@ const mapExpenseToRow = (expense) => {
   };
 };
 
+const mapPayableToRow = (entry) => {
+  const now = new Date().toISOString();
+  return {
+    id: entry.id,
+    title: entry.title,
+    category: entry.category || "",
+    amount: Number(entry.amount ?? 0),
+    due_date: entry.dueDate || entry.createdAt || now,
+    note: entry.note || "",
+    status: entry.status || "pending",
+    created_at: entry.createdAt || now,
+    updated_at: entry.updatedAt || entry.createdAt || now
+  };
+};
+
+const mapReceivableToRow = (entry) => {
+  const now = new Date().toISOString();
+  return {
+    id: entry.id,
+    title: entry.title,
+    customer_name: entry.customerName || "",
+    customer_phone: entry.customerPhone || "",
+    category: entry.category || "",
+    amount: Number(entry.amount ?? 0),
+    due_date: entry.dueDate || entry.createdAt || now,
+    note: entry.note || "",
+    status: entry.status || "pending",
+    created_at: entry.createdAt || now,
+    updated_at: entry.updatedAt || entry.createdAt || now
+  };
+};
+
+const mapCashSessionToRow = (session) => ({
+  id: session.id,
+  opened_at: session.openedAt,
+  closed_at: session.closedAt,
+  opening_balance: Number(session.openingBalance ?? 0),
+  expected_balance: Number(session.expectedBalance ?? 0),
+  counted_balance:
+    session.countedBalance === null || session.countedBalance === undefined
+      ? null
+      : Number(session.countedBalance),
+  difference:
+    session.difference === null || session.difference === undefined ? null : Number(session.difference),
+  note: session.note || "",
+  created_at: session.createdAt || session.openedAt,
+  updated_at: session.updatedAt || session.closedAt || session.openedAt
+});
+
+const mapCashMovementToRow = (movement, sessionId) => ({
+  id: movement.id,
+  session_id: sessionId,
+  type: movement.type || "",
+  amount: Number(movement.amount ?? 0),
+  note: movement.note || "",
+  created_at: movement.createdAt,
+  updated_at: movement.updatedAt || movement.createdAt
+});
+
 const mapRiderToRow = (rider) => {
   const now = new Date().toISOString();
   return {
@@ -224,7 +295,19 @@ const migrate = async () => {
   const customersRows = (payload.customers || []).map(mapCustomerToRow);
   const ordersRows = (payload.orders || []).map(mapOrderToRow);
   const expensesRows = (payload.expenses || []).map(mapExpenseToRow);
+  const categoriesRows = (payload.categories || []).map(mapCategoryToRow);
+  const paymentMethodsRows = (payload.paymentMethods || []).map(mapPaymentMethodToRow);
+  const payablesRows = (payload.payables || []).map(mapPayableToRow);
+  const receivablesRows = (payload.receivables || []).map(mapReceivableToRow);
   const ridersRows = (payload.riders || []).map(mapRiderToRow);
+  const cashSessions = [
+    ...(payload.cashRegister?.currentSession ? [payload.cashRegister.currentSession] : []),
+    ...(payload.cashRegister?.history || [])
+  ];
+  const cashSessionsRows = cashSessions.map(mapCashSessionToRow);
+  const cashMovementsRows = cashSessions.flatMap((session) =>
+    (session.movements || []).map((movement) => mapCashMovementToRow(movement, session.id))
+  );
   const orderItemsRows = (payload.orders || []).flatMap((order) =>
     (order.items || []).map((item) => mapOrderItemToRow(order.id, item))
   );
@@ -234,7 +317,13 @@ const migrate = async () => {
   await deleteAll("customers", "id", "__never__");
   await deleteAll("products", "id", "__never__");
   await deleteAll("promotions", "id", "__never__");
+  await deleteAll("categories", "id", "__never__");
+  await deleteAll("payment_methods", "value", "__never__");
   await deleteAll("expenses", "id", "__never__");
+  await deleteAll("payables", "id", "__never__");
+  await deleteAll("receivables", "id", "__never__");
+  await deleteAll("cash_movements", "id", "__never__");
+  await deleteAll("cash_sessions", "id", "__never__");
   await deleteAll("riders", "id", "__never__");
 
   const { error: settingsError } = await supabase
@@ -248,6 +337,14 @@ const migrate = async () => {
   }
   if (promotionsRows.length) {
     const { error } = await supabase.from("promotions").insert(promotionsRows);
+    if (error) throw new Error(error.message);
+  }
+  if (categoriesRows.length) {
+    const { error } = await supabase.from("categories").insert(categoriesRows);
+    if (error) throw new Error(error.message);
+  }
+  if (paymentMethodsRows.length) {
+    const { error } = await supabase.from("payment_methods").insert(paymentMethodsRows);
     if (error) throw new Error(error.message);
   }
   if (customersRows.length) {
@@ -264,6 +361,22 @@ const migrate = async () => {
   }
   if (expensesRows.length) {
     const { error } = await supabase.from("expenses").insert(expensesRows);
+    if (error) throw new Error(error.message);
+  }
+  if (payablesRows.length) {
+    const { error } = await supabase.from("payables").insert(payablesRows);
+    if (error) throw new Error(error.message);
+  }
+  if (receivablesRows.length) {
+    const { error } = await supabase.from("receivables").insert(receivablesRows);
+    if (error) throw new Error(error.message);
+  }
+  if (cashSessionsRows.length) {
+    const { error } = await supabase.from("cash_sessions").insert(cashSessionsRows);
+    if (error) throw new Error(error.message);
+  }
+  if (cashMovementsRows.length) {
+    const { error } = await supabase.from("cash_movements").insert(cashMovementsRows);
     if (error) throw new Error(error.message);
   }
   if (ridersRows.length) {

@@ -282,6 +282,21 @@ export const api = {
     request("/api/admin/customers", {
       headers: { Authorization: `Bearer ${token}` }
     }),
+  getCategories: (token) =>
+    request("/api/admin/categories", {
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+  createCategory: (token, body) =>
+    request("/api/admin/categories", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  deleteCategory: (token, name) =>
+    request(`/api/admin/categories/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` }
+    }),
   updateFees: (token, fees) =>
     request("/api/admin/settings/fees", {
       method: "PUT",
@@ -307,6 +322,69 @@ export const api = {
   deleteExpense: (token, id) =>
     request(`/api/admin/expenses/${id}`, {
       method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+  createPayable: (token, body) =>
+    request("/api/admin/payables", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  updatePayable: (token, id, body) =>
+    request(`/api/admin/payables/${id}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  deletePayable: (token, id) =>
+    request(`/api/admin/payables/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+  createReceivable: (token, body) =>
+    request("/api/admin/receivables", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  updateReceivable: (token, id, body) =>
+    request(`/api/admin/receivables/${id}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  deleteReceivable: (token, id) =>
+    request(`/api/admin/receivables/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+  openCashRegister: (token, body) =>
+    request("/api/admin/cash/open", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  createCashMovement: (token, body) =>
+    request("/api/admin/cash/movement", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  closeCashRegister: (token, body) =>
+    request("/api/admin/cash/close", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  clearHistory: (token, body) =>
+    request("/api/admin/history/clear", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body)
+    }),
+  resolveSupportRequest: (token, id) =>
+    request(`/api/admin/support-requests/${id}/resolve`, {
+      method: "PUT",
       headers: { Authorization: `Bearer ${token}` }
     }),
   createRider: (token, body) =>

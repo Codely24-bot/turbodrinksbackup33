@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  Archive,
   AlertTriangle,
   ChartColumn,
   ClipboardList,
+  FolderPlus,
   ImageUp,
   LogOut,
   MapPinned,
@@ -12,6 +14,7 @@ import {
   Package,
   Percent,
   Plus,
+  Wallet,
   Search,
   RefreshCcw,
   QrCode,
@@ -89,6 +92,42 @@ const defaultExpenseForm = {
   note: ""
 };
 
+const defaultPayableForm = {
+  title: "",
+  category: "",
+  amount: "",
+  dueDate: "",
+  note: "",
+  status: "pending"
+};
+
+const defaultReceivableForm = {
+  title: "",
+  customerName: "",
+  customerPhone: "",
+  category: "",
+  amount: "",
+  dueDate: "",
+  note: "",
+  status: "pending"
+};
+
+const defaultCashOpenForm = {
+  openingBalance: "",
+  note: ""
+};
+
+const defaultCashCloseForm = {
+  countedBalance: "",
+  note: ""
+};
+
+const defaultCashMovementForm = {
+  type: "withdrawal",
+  amount: "",
+  note: ""
+};
+
 const defaultRiderForm = {
   name: "",
   phone: "",
@@ -107,18 +146,20 @@ const defaultPosForm = {
 };
 
 const posPaymentOptions = [
-  { value: "pix", label: "PIX" },
+  { value: "pix_key", label: "Chave PIX" },
+  { value: "pix_qr", label: "Chave PIX QR Code" },
   { value: "dinheiro", label: "Dinheiro" },
-  { value: "cartao", label: "Cartao" }
+  { value: "credit_card", label: "Cartao de Credito" },
+  { value: "debit_card", label: "Cartao de Debito" }
 ];
 const paymentLabels = posPaymentOptions.reduce(
   (accumulator, option) => ({ ...accumulator, [option.value]: option.label }),
-  { multiple: "Multiplo" }
+  { pix: "PIX", cartao: "Cartao", multiple: "Multiplo" }
 );
 
 const createPaymentRow = (overrides = {}) => ({
   id: `pay-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-  method: "pix",
+  method: "pix_key",
   amount: "",
   ...overrides
 });
@@ -149,6 +190,33 @@ const isWithinDays = (dateValue, days) => {
   }
   const diffMs = Date.now() - parsed.getTime();
   return diffMs <= days * 24 * 60 * 60 * 1000;
+};
+const isOverdue = (dateValue) => {
+  if (!dateValue) {
+    return false;
+  }
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  parsed.setHours(0, 0, 0, 0);
+  return parsed.getTime() < today.getTime();
+};
+const isDueSoon = (dateValue, days = 3) => {
+  if (!dateValue) {
+    return false;
+  }
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  parsed.setHours(0, 0, 0, 0);
+  const diffDays = (parsed.getTime() - today.getTime()) / (24 * 60 * 60 * 1000);
+  return diffDays >= 0 && diffDays <= days;
 };
 const escapeCsv = (value) => {
   const stringValue = String(value ?? "");
@@ -402,8 +470,16 @@ function AdminPage() {
   const [loadError, setLoadError] = useState("");
   const [productForm, setProductForm] = useState(defaultProductForm);
   const [promotionForm, setPromotionForm] = useState(defaultPromotionForm);
+  const [categoryName, setCategoryName] = useState("");
   const [expenseForm, setExpenseForm] = useState(defaultExpenseForm);
   const [editingExpenseId, setEditingExpenseId] = useState("");
+  const [payableForm, setPayableForm] = useState(defaultPayableForm);
+  const [editingPayableId, setEditingPayableId] = useState("");
+  const [receivableForm, setReceivableForm] = useState(defaultReceivableForm);
+  const [editingReceivableId, setEditingReceivableId] = useState("");
+  const [cashOpenForm, setCashOpenForm] = useState(defaultCashOpenForm);
+  const [cashCloseForm, setCashCloseForm] = useState(defaultCashCloseForm);
+  const [cashMovementForm, setCashMovementForm] = useState(defaultCashMovementForm);
   const [riderForm, setRiderForm] = useState(defaultRiderForm);
   const [editingRiderId, setEditingRiderId] = useState("");
   const [showRiders, setShowRiders] = useState(false);
@@ -421,6 +497,8 @@ function AdminPage() {
   const [posLastOrder, setPosLastOrder] = useState(null);
   const [posPrintWidth, setPosPrintWidth] = useState("58");
   const [showExpenses, setShowExpenses] = useState(false);
+  const [showPayables, setShowPayables] = useState(false);
+  const [showReceivables, setShowReceivables] = useState(false);
   const [isRinging, setIsRinging] = useState(false);
   const posPrintedRef = useRef("");
   const soundEnabledRef = useRef(false);
@@ -704,6 +782,13 @@ function AdminPage() {
     setAdminConfirmed(false);
     setExpenseForm(defaultExpenseForm);
     setEditingExpenseId("");
+    setPayableForm(defaultPayableForm);
+    setEditingPayableId("");
+    setReceivableForm(defaultReceivableForm);
+    setEditingReceivableId("");
+    setCashOpenForm(defaultCashOpenForm);
+    setCashCloseForm(defaultCashCloseForm);
+    setCashMovementForm(defaultCashMovementForm);
     setRiderForm(defaultRiderForm);
     setEditingRiderId("");
     setSoundEnabled(false);
@@ -715,7 +800,10 @@ function AdminPage() {
 
   const productCatalog = dashboard?.products ?? [];
   const promotionsCatalog = dashboard?.promotions ?? [];
-  const categories = [...new Set(productCatalog.map((product) => product.category))];
+  const categories = dashboard?.categories?.length
+    ? dashboard.categories
+    : [...new Set(productCatalog.map((product) => product.category))];
+  const paymentOptions = dashboard?.paymentMethods?.filter((method) => method.active) ?? posPaymentOptions;
   const whatsappStatus = dashboard?.whatsapp ?? {};
   const whatsappMeta = getWhatsAppMeta(whatsappStatus);
   const deliveryBoard = orders.filter((order) => order.status === "out_for_delivery");
@@ -726,6 +814,58 @@ function AdminPage() {
   const expensesTotal = expenses.reduce(
     (sum, expense) => sum + parseAmount(expense.amount),
     0
+  );
+  const stockSummary = dashboard?.stockSummary ?? {
+    lowThreshold: 5,
+    totalProducts: productCatalog.length,
+    totalUnits: productCatalog.reduce((sum, product) => sum + Number(product.stock || 0), 0),
+    zeroStockCount: productCatalog.filter((product) => Number(product.stock || 0) <= 0).length,
+    lowStockCount: productCatalog.filter((product) => {
+      const stock = Number(product.stock || 0);
+      return stock > 0 && stock <= 5;
+    }).length,
+    inventoryValue: productCatalog.reduce(
+      (sum, product) => sum + Number(product.purchasePrice || 0) * Number(product.stock || 0),
+      0
+    )
+  };
+  const payables = dashboard?.payables ?? [];
+  const payablesSummary = dashboard?.payablesSummary ?? {
+    total: payables.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+    pendingTotal: payables
+      .filter((entry) => entry.status !== "paid")
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+    pendingCount: payables.filter((entry) => entry.status !== "paid").length,
+    paidCount: payables.filter((entry) => entry.status === "paid").length
+  };
+  const receivables = dashboard?.receivables ?? [];
+  const receivablesSummary = dashboard?.receivablesSummary ?? {
+    total: receivables.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+    pendingTotal: receivables
+      .filter((entry) => entry.status !== "paid")
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+    pendingCount: receivables.filter((entry) => entry.status !== "paid").length,
+    paidCount: receivables.filter((entry) => entry.status === "paid").length
+  };
+  const cashRegister = dashboard?.cashRegister ?? { currentSession: null, history: [] };
+  const cashSession = cashRegister.currentSession || null;
+  const cashHistory = cashRegister.history || [];
+  const supportRequests = dashboard?.supportRequests ?? [];
+  const pendingSupportRequests = supportRequests.filter((entry) => entry.status !== "resolved");
+  const zeroStockProducts = productCatalog.filter((product) => Number(product.stock || 0) <= 0);
+  const lowStockProducts = productCatalog.filter((product) => {
+    const stock = Number(product.stock || 0);
+    return stock > 0 && stock <= Number(stockSummary.lowThreshold || 5);
+  });
+  const overduePayables = payables.filter((entry) => entry.status !== "paid" && isOverdue(entry.dueDate));
+  const dueSoonPayables = payables.filter(
+    (entry) => entry.status !== "paid" && !isOverdue(entry.dueDate) && isDueSoon(entry.dueDate)
+  );
+  const overdueReceivables = receivables.filter(
+    (entry) => entry.status !== "paid" && isOverdue(entry.dueDate)
+  );
+  const dueSoonReceivables = receivables.filter(
+    (entry) => entry.status !== "paid" && !isOverdue(entry.dueDate) && isDueSoon(entry.dueDate)
   );
   const riders = dashboard?.riders ?? [];
   const deliveredOrders = orders.filter(
@@ -1036,6 +1176,28 @@ function AdminPage() {
     }
   };
 
+  const saveCategory = async () => {
+    const name = categoryName.trim();
+
+    if (!name) {
+      setMessage("Informe o nome da categoria.");
+      return;
+    }
+
+    const ok = await runAction(
+      () => api.createCategory(token, { name }),
+      "Categoria criada."
+    );
+
+    if (ok) {
+      setCategoryName("");
+      setProductForm((current) => ({
+        ...current,
+        category: current.category || name
+      }));
+    }
+  };
+
   const saveFees = () =>
     runAction(
       () =>
@@ -1070,6 +1232,104 @@ function AdminPage() {
     if (ok) {
       setExpenseForm(defaultExpenseForm);
       setEditingExpenseId("");
+    }
+  };
+
+  const savePayable = async () => {
+    const payload = {
+      title: payableForm.title,
+      category: payableForm.category,
+      amount: parseAmount(payableForm.amount),
+      dueDate: payableForm.dueDate,
+      note: payableForm.note,
+      status: payableForm.status
+    };
+
+    const ok = await runAction(
+      () =>
+        editingPayableId
+          ? api.updatePayable(token, editingPayableId, payload)
+          : api.createPayable(token, payload),
+      editingPayableId ? "Conta a pagar atualizada." : "Conta a pagar registrada."
+    );
+
+    if (ok) {
+      setPayableForm(defaultPayableForm);
+      setEditingPayableId("");
+    }
+  };
+
+  const saveReceivable = async () => {
+    const payload = {
+      title: receivableForm.title,
+      customerName: receivableForm.customerName,
+      customerPhone: receivableForm.customerPhone,
+      category: receivableForm.category,
+      amount: parseAmount(receivableForm.amount),
+      dueDate: receivableForm.dueDate,
+      note: receivableForm.note,
+      status: receivableForm.status
+    };
+
+    const ok = await runAction(
+      () =>
+        editingReceivableId
+          ? api.updateReceivable(token, editingReceivableId, payload)
+          : api.createReceivable(token, payload),
+      editingReceivableId ? "Conta a receber atualizada." : "Conta a receber registrada."
+    );
+
+    if (ok) {
+      setReceivableForm(defaultReceivableForm);
+      setEditingReceivableId("");
+    }
+  };
+
+  const openCashRegister = async () => {
+    const ok = await runAction(
+      () =>
+        api.openCashRegister(token, {
+          openingBalance: parseAmount(cashOpenForm.openingBalance),
+          note: cashOpenForm.note
+        }),
+      "Caixa aberto."
+    );
+
+    if (ok) {
+      setCashOpenForm(defaultCashOpenForm);
+    }
+  };
+
+  const createCashMovement = async () => {
+    const ok = await runAction(
+      () =>
+        api.createCashMovement(token, {
+          type: cashMovementForm.type,
+          amount: parseAmount(cashMovementForm.amount),
+          note: cashMovementForm.note
+        }),
+      cashMovementForm.type === "withdrawal"
+        ? "Retirada registrada."
+        : "Suprimento registrado."
+    );
+
+    if (ok) {
+      setCashMovementForm(defaultCashMovementForm);
+    }
+  };
+
+  const closeCashRegister = async () => {
+    const ok = await runAction(
+      () =>
+        api.closeCashRegister(token, {
+          countedBalance: parseAmount(cashCloseForm.countedBalance),
+          note: cashCloseForm.note
+        }),
+      "Caixa fechado."
+    );
+
+    if (ok) {
+      setCashCloseForm(defaultCashCloseForm);
     }
   };
 
@@ -1245,6 +1505,92 @@ function AdminPage() {
 
   const removeExpense = (expenseId) =>
     runAction(() => api.deleteExpense(token, expenseId), "Despesa removida.");
+
+  const editPayable = (entry) => {
+    setEditingPayableId(entry.id);
+    setPayableForm({
+      title: entry.title || "",
+      category: entry.category || "",
+      amount: entry.amount ?? "",
+      dueDate: entry.dueDate ? String(entry.dueDate).slice(0, 10) : "",
+      note: entry.note || "",
+      status: entry.status || "pending"
+    });
+  };
+
+  const removePayable = (id) =>
+    runAction(() => api.deletePayable(token, id), "Conta a pagar removida.");
+
+  const togglePayableStatus = (entry) =>
+    runAction(
+      () =>
+        api.updatePayable(token, entry.id, {
+          status: entry.status === "paid" ? "pending" : "paid"
+        }),
+      entry.status === "paid"
+        ? "Conta a pagar reaberta."
+        : "Conta a pagar marcada como paga."
+    );
+
+  const editReceivable = (entry) => {
+    setEditingReceivableId(entry.id);
+    setReceivableForm({
+      title: entry.title || "",
+      customerName: entry.customerName || "",
+      customerPhone: entry.customerPhone || "",
+      category: entry.category || "",
+      amount: entry.amount ?? "",
+      dueDate: entry.dueDate ? String(entry.dueDate).slice(0, 10) : "",
+      note: entry.note || "",
+      status: entry.status || "pending"
+    });
+  };
+
+  const removeReceivable = (id) =>
+    runAction(() => api.deleteReceivable(token, id), "Conta a receber removida.");
+
+  const toggleReceivableStatus = (entry) =>
+    runAction(
+      () =>
+        api.updateReceivable(token, entry.id, {
+          status: entry.status === "paid" ? "pending" : "paid"
+        }),
+      entry.status === "paid"
+        ? "Conta a receber reaberta."
+        : "Conta a receber marcada como recebida."
+    );
+
+  const removeCategory = (name) =>
+    runAction(() => api.deleteCategory(token, name), "Categoria removida.");
+
+  const clearHistory = (target) =>
+  {
+    const label =
+      target === "delivery"
+        ? "o historico de pedidos delivery"
+        : target === "pos"
+          ? "o historico de vendas PDV"
+          : "todo o historico de pedidos e vendas";
+
+    if (!window.confirm(`Tem certeza que deseja limpar ${label}? Esta acao nao pode ser desfeita.`)) {
+      return Promise.resolve(false);
+    }
+
+    return runAction(
+      () => api.clearHistory(token, { target }),
+      target === "delivery"
+        ? "Historico de pedidos delivery limpo."
+        : target === "pos"
+          ? "Historico de vendas PDV limpo."
+          : "Historico geral limpo."
+    );
+  };
+
+  const resolveSupportRequest = (id) =>
+    runAction(
+      () => api.resolveSupportRequest(token, id),
+      "Solicitacao marcada como resolvida."
+    );
 
   const handleProductCategoryChange = (category) => {
     setProductForm((current) => ({
@@ -1536,6 +1882,15 @@ function AdminPage() {
             <strong>{whatsappStatus.lastError || "Nenhum erro recente"}</strong>
             <small>{whatsappStatus.lastDisconnectReason || "Sessao estavel"}</small>
           </div>
+          <div className={`whatsapp-status-card ${pendingSupportRequests.length ? "has-error" : ""}`}>
+            <span>Atendimento humano</span>
+            <strong>{pendingSupportRequests.length ? `${pendingSupportRequests.length} conversa(s) aguardando` : "Nenhuma conversa pendente"}</strong>
+            <small>
+              {pendingSupportRequests[0]?.requestedAt
+                ? `Ultimo pedido: ${formatDate(pendingSupportRequests[0].requestedAt)}`
+                : "Quando o cliente escolher a opcao 6, aparece aqui."}
+            </small>
+          </div>
         </div>
 
         <div className="card-actions">
@@ -1557,6 +1912,28 @@ function AdminPage() {
               : "O bot esta pronto para receber mensagens dos clientes e disparar as atualizacoes dos pedidos automaticamente."}
           </p>
         </div>
+        {pendingSupportRequests.length ? (
+          <div className="support-request-list">
+            {pendingSupportRequests.map((entry) => (
+              <div key={entry.id} className="support-request-row">
+                <div>
+                  <strong>{entry.customerName || "Cliente do WhatsApp"}</strong>
+                  <span>{entry.phone || "Sem telefone"} • {entry.requestedAt ? formatDate(entry.requestedAt) : "-"}</span>
+                </div>
+                <div className="card-actions">
+                  <span className="status-pill is-pending">Prioridade</span>
+                  <button
+                    type="button"
+                    className="button button-primary button-compact"
+                    onClick={() => resolveSupportRequest(entry.id)}
+                  >
+                    Marcar resolvido
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <nav className="tab-row">
@@ -1945,7 +2322,7 @@ function AdminPage() {
                         );
                       }}
                     >
-                      {posPaymentOptions.map((option) => (
+                      {paymentOptions.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
@@ -2071,6 +2448,48 @@ function AdminPage() {
                 <span className="eyebrow">Cadastro</span>
                 <h2>{editingProductId ? "Editar produto" : "Novo produto"}</h2>
               </div>
+            </div>
+            <div className="summary-list">
+              <div><span>Categorias</span><strong>{categories.length}</strong></div>
+              <div><span>Produtos zerados</span><strong>{stockSummary.zeroStockCount}</strong></div>
+              <div><span>Estoque baixo</span><strong>{stockSummary.lowStockCount}</strong></div>
+              <div><span>Valor em estoque</span><strong>{formatCurrency(stockSummary.inventoryValue)}</strong></div>
+            </div>
+            <div className="expense-form">
+              <div className="field-grid">
+                <label className="field-span">
+                  Nova categoria
+                  <input
+                    value={categoryName}
+                    onChange={(event) => setCategoryName(event.target.value)}
+                    placeholder="Ex.: Conveniencia, Gelo, Carvao"
+                  />
+                </label>
+              </div>
+              <div className="card-actions">
+                <button type="button" className="button button-outline" disabled={saving} onClick={saveCategory}>
+                  <FolderPlus size={16} />
+                  Criar categoria
+                </button>
+              </div>
+              {categories.length ? (
+                <div className="chips-list">
+                  {categories.map((category) => (
+                    <span key={category} className="chip light">
+                      {category}
+                      {!productCatalog.some((product) => product.category === category) ? (
+                        <button
+                          type="button"
+                          className="button button-muted button-compact"
+                          onClick={() => removeCategory(category)}
+                        >
+                          Remover
+                        </button>
+                      ) : null}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="field-grid">
               <label>
@@ -2268,6 +2687,192 @@ function AdminPage() {
                 </div>
               ))}
             </div>
+          </article>
+
+          <article className="admin-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Estoque</span>
+                <h2>Saude do estoque</h2>
+              </div>
+              <span className="status-pill">Minimo {stockSummary.lowThreshold} un.</span>
+            </div>
+            <div className="summary-list">
+              <div><span>Produtos cadastrados</span><strong>{stockSummary.totalProducts}</strong></div>
+              <div><span>Quantidade total</span><strong>{stockSummary.totalUnits}</strong></div>
+              <div><span>Estoque zerado</span><strong>{stockSummary.zeroStockCount}</strong></div>
+              <div><span>Estoque baixo</span><strong>{stockSummary.lowStockCount}</strong></div>
+              <div><span>Valor em estoque</span><strong>{formatCurrency(stockSummary.inventoryValue)}</strong></div>
+            </div>
+            {zeroStockProducts.length || lowStockProducts.length ? (
+              <div className="alert-stack">
+                {zeroStockProducts.length ? (
+                  <div className="promo-note warning-note">
+                    <AlertTriangle size={18} />
+                    <p>
+                      {zeroStockProducts.length} produto(s) com estoque zerado:
+                      {" "}
+                      {zeroStockProducts.slice(0, 4).map((product) => product.name).join(", ")}
+                      {zeroStockProducts.length > 4 ? "..." : ""}
+                    </p>
+                  </div>
+                ) : null}
+                {lowStockProducts.length ? (
+                  <div className="promo-note warning-note soft">
+                    <Package size={18} />
+                    <p>
+                      {lowStockProducts.length} produto(s) com estoque baixo:
+                      {" "}
+                      {lowStockProducts.slice(0, 4).map((product) => `${product.name} (${product.stock})`).join(", ")}
+                      {lowStockProducts.length > 4 ? "..." : ""}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="promo-note success-note">
+                <Package size={18} />
+                <p>Estoque sob controle no momento, sem itens zerados ou abaixo do limite minimo.</p>
+              </div>
+            )}
+          </article>
+
+          <article className="admin-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Caixa</span>
+                <h2>Abertura e fechamento</h2>
+              </div>
+              <span className={`status-pill ${cashSession ? "is-online" : "is-disabled"}`}>
+                {cashSession ? "Caixa aberto" : "Caixa fechado"}
+              </span>
+            </div>
+            <div className="summary-list">
+              <div><span>Status</span><strong>{cashSession ? "Aberto" : "Fechado"}</strong></div>
+              <div><span>Saldo esperado</span><strong>{formatCurrency(cashSession?.expectedBalance || 0)}</strong></div>
+              <div><span>Abertura</span><strong>{cashSession?.openedAt ? formatDate(cashSession.openedAt) : "-"}</strong></div>
+              <div><span>Fechamentos salvos</span><strong>{cashHistory.length}</strong></div>
+            </div>
+            {!cashSession ? (
+              <div className="expense-form">
+                <div className="field-grid">
+                  <label>
+                    Valor de abertura
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashOpenForm.openingBalance}
+                      onChange={(event) =>
+                        setCashOpenForm((current) => ({ ...current, openingBalance: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </label>
+                  <label>
+                    Observacao
+                    <input
+                      value={cashOpenForm.note}
+                      onChange={(event) =>
+                        setCashOpenForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Turno da tarde, abertura da loja..."
+                    />
+                  </label>
+                </div>
+                <button type="button" className="button button-primary" disabled={saving} onClick={openCashRegister}>
+                  <Wallet size={16} />
+                  Abrir caixa
+                </button>
+              </div>
+            ) : (
+              <div className="expense-form">
+                <div className="field-grid">
+                  <label>
+                    Movimento
+                    <select
+                      value={cashMovementForm.type}
+                      onChange={(event) =>
+                        setCashMovementForm((current) => ({ ...current, type: event.target.value }))
+                      }
+                    >
+                      <option value="withdrawal">Retirada de caixa</option>
+                      <option value="supply">Suprimento de caixa</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valor
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashMovementForm.amount}
+                      onChange={(event) =>
+                        setCashMovementForm((current) => ({ ...current, amount: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </label>
+                  <label className="field-span">
+                    Observacao
+                    <input
+                      value={cashMovementForm.note}
+                      onChange={(event) =>
+                        setCashMovementForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Motivo do movimento"
+                    />
+                  </label>
+                  <label>
+                    Saldo contado
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashCloseForm.countedBalance}
+                      onChange={(event) =>
+                        setCashCloseForm((current) => ({ ...current, countedBalance: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </label>
+                  <label>
+                    Fechamento
+                    <input
+                      value={cashCloseForm.note}
+                      onChange={(event) =>
+                        setCashCloseForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Observacoes do fechamento"
+                    />
+                  </label>
+                </div>
+                <div className="card-actions">
+                  <button type="button" className="button button-outline" disabled={saving} onClick={createCashMovement}>
+                    {cashMovementForm.type === "withdrawal" ? "Registrar retirada" : "Registrar suprimento"}
+                  </button>
+                  <button type="button" className="button button-primary" disabled={saving} onClick={closeCashRegister}>
+                    Fechar caixa
+                  </button>
+                </div>
+                {(cashSession.movements || []).length ? (
+                  <div className="expense-list">
+                    {cashSession.movements.slice().reverse().slice(0, 6).map((movement) => (
+                      <div key={movement.id} className="expense-row">
+                        <div>
+                          <strong>{movement.type}</strong>
+                          <span>{movement.createdAt ? formatDate(movement.createdAt) : "-"}</span>
+                        </div>
+                        <div className="expense-actions">
+                          <strong>{movement.amount < 0 ? "- " : ""}{formatCurrency(Math.abs(Number(movement.amount || 0)))}</strong>
+                          <span>{movement.note || "Sem observacao"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </article>
 
           <article className="admin-card">
@@ -2550,6 +3155,388 @@ function AdminPage() {
                 </div>
               )
             ) : null}
+          </article>
+
+          <article className="admin-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Financeiro</span>
+                <h2>Contas a pagar</h2>
+              </div>
+              <button
+                type="button"
+                className="button button-outline"
+                onClick={() => setShowPayables((current) => !current)}
+              >
+                {showPayables ? "Ocultar contas" : "Ver contas"}
+              </button>
+            </div>
+            <div className="summary-list">
+              <div><span>Total previsto</span><strong>{formatCurrency(payablesSummary.total)}</strong></div>
+              <div><span>Pendente</span><strong>{formatCurrency(payablesSummary.pendingTotal)}</strong></div>
+              <div><span>Em aberto</span><strong>{payablesSummary.pendingCount}</strong></div>
+              <div><span>Pagas</span><strong>{payablesSummary.paidCount}</strong></div>
+            </div>
+            {overduePayables.length || dueSoonPayables.length ? (
+              <div className="alert-stack">
+                {overduePayables.length ? (
+                  <div className="promo-note warning-note">
+                    <AlertTriangle size={18} />
+                    <p>{overduePayables.length} conta(s) a pagar vencida(s) exigem atencao imediata.</p>
+                  </div>
+                ) : null}
+                {dueSoonPayables.length ? (
+                  <div className="promo-note warning-note soft">
+                    <Wallet size={18} />
+                    <p>{dueSoonPayables.length} conta(s) a pagar vencem nos proximos 3 dias.</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="expense-form">
+              <div className="field-grid">
+                <label>
+                  Titulo
+                  <input
+                    value={payableForm.title}
+                    onChange={(event) =>
+                      setPayableForm((current) => ({ ...current, title: event.target.value }))
+                    }
+                    placeholder="Fornecedor, aluguel, energia"
+                  />
+                </label>
+                <label>
+                  Categoria
+                  <input
+                    value={payableForm.category}
+                    onChange={(event) =>
+                      setPayableForm((current) => ({ ...current, category: event.target.value }))
+                    }
+                    placeholder="Operacional"
+                  />
+                </label>
+                <label>
+                  Valor
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={payableForm.amount}
+                    onChange={(event) =>
+                      setPayableForm((current) => ({ ...current, amount: event.target.value }))
+                    }
+                    placeholder="0,00"
+                  />
+                </label>
+                <label>
+                  Vencimento
+                  <input
+                    type="date"
+                    value={payableForm.dueDate}
+                    onChange={(event) =>
+                      setPayableForm((current) => ({ ...current, dueDate: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Status
+                  <select
+                    value={payableForm.status}
+                    onChange={(event) =>
+                      setPayableForm((current) => ({ ...current, status: event.target.value }))
+                    }
+                  >
+                    <option value="pending">Pendente</option>
+                    <option value="paid">Pago</option>
+                  </select>
+                </label>
+                <label className="field-span">
+                  Observacao
+                  <textarea
+                    rows="2"
+                    value={payableForm.note}
+                    onChange={(event) =>
+                      setPayableForm((current) => ({ ...current, note: event.target.value }))
+                    }
+                    placeholder="Detalhes da conta"
+                  />
+                </label>
+              </div>
+              <div className="card-actions">
+                <button type="button" className="button button-primary" disabled={saving} onClick={savePayable}>
+                  {editingPayableId ? "Atualizar conta" : "Salvar conta"}
+                </button>
+                {editingPayableId ? (
+                  <button
+                    type="button"
+                    className="button button-muted"
+                    onClick={() => {
+                      setEditingPayableId("");
+                      setPayableForm(defaultPayableForm);
+                    }}
+                  >
+                    Cancelar edicao
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {showPayables ? (
+              payables.length ? (
+                <div className="expense-list">
+                  {payables.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`expense-row ${entry.status === "paid" ? "is-paid" : isOverdue(entry.dueDate) ? "is-alert" : isDueSoon(entry.dueDate) ? "is-warning" : ""}`}
+                    >
+                      <div>
+                        <strong>{entry.title}</strong>
+                        <span>
+                          {[entry.category, entry.dueDate ? formatDate(entry.dueDate) : "", entry.status === "paid" ? "Pago" : "Pendente"]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </span>
+                      </div>
+                      <div className="expense-actions">
+                        <strong>{formatCurrency(entry.amount)}</strong>
+                        <div className="card-actions">
+                          <button type="button" className="button button-soft" onClick={() => togglePayableStatus(entry)}>
+                            {entry.status === "paid" ? "Reabrir" : "Marcar pago"}
+                          </button>
+                          <button type="button" className="button button-outline" onClick={() => editPayable(entry)}>
+                            Editar
+                          </button>
+                          <button type="button" className="button button-muted" onClick={() => removePayable(entry.id)}>
+                            Remover
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state compact">
+                  <h3>Nenhuma conta a pagar</h3>
+                  <p>Use este bloco para registrar aluguel, fornecedores e despesas futuras.</p>
+                </div>
+              )
+            ) : null}
+          </article>
+
+          <article className="admin-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Fiados</span>
+                <h2>Contas a receber</h2>
+              </div>
+              <button
+                type="button"
+                className="button button-outline"
+                onClick={() => setShowReceivables((current) => !current)}
+              >
+                {showReceivables ? "Ocultar fiados" : "Ver fiados"}
+              </button>
+            </div>
+            <div className="summary-list">
+              <div><span>Total registrado</span><strong>{formatCurrency(receivablesSummary.total)}</strong></div>
+              <div><span>Em aberto</span><strong>{formatCurrency(receivablesSummary.pendingTotal)}</strong></div>
+              <div><span>Clientes pendentes</span><strong>{receivablesSummary.pendingCount}</strong></div>
+              <div><span>Recebidos</span><strong>{receivablesSummary.paidCount}</strong></div>
+            </div>
+            {overdueReceivables.length || dueSoonReceivables.length ? (
+              <div className="alert-stack">
+                {overdueReceivables.length ? (
+                  <div className="promo-note warning-note">
+                    <AlertTriangle size={18} />
+                    <p>{overdueReceivables.length} fiado(s) estao vencidos e precisam de cobranca.</p>
+                  </div>
+                ) : null}
+                {dueSoonReceivables.length ? (
+                  <div className="promo-note warning-note soft">
+                    <Users size={18} />
+                    <p>{dueSoonReceivables.length} conta(s) a receber vencem nos proximos 3 dias.</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="expense-form">
+              <div className="field-grid">
+                <label>
+                  Titulo
+                  <input
+                    value={receivableForm.title}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, title: event.target.value }))
+                    }
+                    placeholder="Fiado do cliente"
+                  />
+                </label>
+                <label>
+                  Cliente
+                  <input
+                    value={receivableForm.customerName}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, customerName: event.target.value }))
+                    }
+                    placeholder="Nome do cliente"
+                  />
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    value={receivableForm.customerPhone}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, customerPhone: event.target.value }))
+                    }
+                    placeholder="(11) 99999-9999"
+                  />
+                </label>
+                <label>
+                  Categoria
+                  <input
+                    value={receivableForm.category}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, category: event.target.value }))
+                    }
+                    placeholder="Fiado"
+                  />
+                </label>
+                <label>
+                  Valor
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={receivableForm.amount}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, amount: event.target.value }))
+                    }
+                    placeholder="0,00"
+                  />
+                </label>
+                <label>
+                  Vencimento
+                  <input
+                    type="date"
+                    value={receivableForm.dueDate}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, dueDate: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Status
+                  <select
+                    value={receivableForm.status}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, status: event.target.value }))
+                    }
+                  >
+                    <option value="pending">Pendente</option>
+                    <option value="paid">Recebido</option>
+                  </select>
+                </label>
+                <label className="field-span">
+                  Observacao
+                  <textarea
+                    rows="2"
+                    value={receivableForm.note}
+                    onChange={(event) =>
+                      setReceivableForm((current) => ({ ...current, note: event.target.value }))
+                    }
+                    placeholder="Produto, prazo combinado, observacoes"
+                  />
+                </label>
+              </div>
+              <div className="card-actions">
+                <button type="button" className="button button-primary" disabled={saving} onClick={saveReceivable}>
+                  {editingReceivableId ? "Atualizar fiado" : "Salvar fiado"}
+                </button>
+                {editingReceivableId ? (
+                  <button
+                    type="button"
+                    className="button button-muted"
+                    onClick={() => {
+                      setEditingReceivableId("");
+                      setReceivableForm(defaultReceivableForm);
+                    }}
+                  >
+                    Cancelar edicao
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {showReceivables ? (
+              receivables.length ? (
+                <div className="expense-list">
+                  {receivables.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`expense-row ${entry.status === "paid" ? "is-paid" : isOverdue(entry.dueDate) ? "is-alert" : isDueSoon(entry.dueDate) ? "is-warning" : ""}`}
+                    >
+                      <div>
+                        <strong>{entry.customerName || entry.title}</strong>
+                        <span>
+                          {[entry.title, entry.customerPhone, entry.dueDate ? formatDate(entry.dueDate) : "", entry.status === "paid" ? "Recebido" : "Pendente"]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </span>
+                      </div>
+                      <div className="expense-actions">
+                        <strong>{formatCurrency(entry.amount)}</strong>
+                        <div className="card-actions">
+                          <button type="button" className="button button-soft" onClick={() => toggleReceivableStatus(entry)}>
+                            {entry.status === "paid" ? "Reabrir" : "Marcar recebido"}
+                          </button>
+                          <button type="button" className="button button-outline" onClick={() => editReceivable(entry)}>
+                            Editar
+                          </button>
+                          <button type="button" className="button button-muted" onClick={() => removeReceivable(entry.id)}>
+                            Remover
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state compact">
+                  <h3>Nenhum fiado registrado</h3>
+                  <p>Registre os recebimentos pendentes para acompanhar quem ficou devendo.</p>
+                </div>
+              )
+            ) : null}
+          </article>
+
+          <article className="admin-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Historicos</span>
+                <h2>Limpeza rapida</h2>
+              </div>
+            </div>
+            <div className="summary-list">
+              <div><span>Total de registros</span><strong>{orders.length}</strong></div>
+              <div><span>Pedidos delivery</span><strong>{orders.filter((order) => order.channel !== "pos").length}</strong></div>
+              <div><span>Vendas PDV</span><strong>{orders.filter((order) => order.channel === "pos").length}</strong></div>
+            </div>
+            <div className="card-actions">
+              <button type="button" className="button button-outline" disabled={saving} onClick={() => clearHistory("delivery")}>
+                <Archive size={16} />
+                Limpar pedidos
+              </button>
+              <button type="button" className="button button-outline" disabled={saving} onClick={() => clearHistory("pos")}>
+                <Archive size={16} />
+                Limpar vendas
+              </button>
+              <button type="button" className="button button-muted" disabled={saving} onClick={() => clearHistory("all")}>
+                <Archive size={16} />
+                Limpar tudo
+              </button>
+            </div>
+            <div className="promo-note">
+              <Archive size={18} />
+              <p>Ao limpar o historico, o sistema remove os registros de pedidos e recalcula o resumo dos clientes com base no que restar salvo.</p>
+            </div>
           </article>
 
           <article className="admin-card">

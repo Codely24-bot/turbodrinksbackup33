@@ -69,6 +69,14 @@ const defaultProductImageByCategory = {
   "Combos e promocoes": "/products/combo.svg"
 };
 
+const defaultPaymentMethods = [
+  { value: "dinheiro", label: "Dinheiro", active: true },
+  { value: "pix_key", label: "Chave PIX", active: true },
+  { value: "pix_qr", label: "Chave PIX QR Code", active: true },
+  { value: "credit_card", label: "Cartao de Credito", active: true },
+  { value: "debit_card", label: "Cartao de Debito", active: true }
+];
+
 const normalizeNeighborhood = (value = "") =>
   value
     .normalize("NFD")
@@ -85,6 +93,33 @@ const statusSortValue = {
 };
 
 const parseMoney = (value) => Number(Number(value || 0).toFixed(2));
+const normalizeLabel = (value = "") => String(value || "").trim();
+const getCatalogCategories = (db) =>
+  [...new Set([...(db.categories || []), ...db.products.map((product) => product.category)])]
+    .map(normalizeLabel)
+    .filter(Boolean);
+const getPaymentMethods = (db) => {
+  const methods = Array.isArray(db.paymentMethods) && db.paymentMethods.length
+    ? db.paymentMethods
+    : defaultPaymentMethods;
+
+  return methods
+    .map((method) => ({
+      value: String(method?.value || "").trim(),
+      label: String(method?.label || method?.value || "").trim(),
+      active: method?.active ?? true
+    }))
+    .filter((method) => method.value && method.label);
+};
+const getAvailablePaymentMethodValues = (db) =>
+  new Set([
+    "pix",
+    "cartao",
+    "multiple",
+    ...getPaymentMethods(db)
+      .filter((method) => method.active)
+      .map((method) => method.value)
+  ]);
 const parseExpenseDate = (value, fallback) => {
   if (!value) {
     return fallback;
@@ -157,7 +192,7 @@ const getStorePayload = (db) => ({
     ...db.settings,
     publicStoreUrl: getPublicStoreUrl()
   },
-  categories: [...new Set(db.products.map((product) => product.category))],
+  categories: getCatalogCategories(db),
   products: db.products
     .filter((product) => product.active && product.stock > 0)
     .sort(
@@ -167,7 +202,8 @@ const getStorePayload = (db) => ({
   featuredProducts: db.products.filter(
     (product) => product.active && product.stock > 0 && product.featured
   ),
-  promotions: db.promotions.filter((promotion) => promotion.active)
+  promotions: db.promotions.filter((promotion) => promotion.active),
+  paymentMethods: getPaymentMethods(db).filter((method) => method.active)
 });
 
 const getFeeForNeighborhood = (db, neighborhood) => {
@@ -181,6 +217,105 @@ const getFeeForNeighborhood = (db, neighborhood) => {
 const getSequenceNumber = (orders) => {
   const lastNumber = orders.reduce((max, order) => Math.max(max, order.number), 1000);
   return lastNumber + 1;
+};
+
+const getStockSummary = (db) => {
+  const lowThreshold = Math.max(Number(db.settings?.stockLowThreshold || 5), 1);
+  const products = Array.isArray(db.products) ? db.products : [];
+  const totalUnits = products.reduce((sum, product) => sum + Number(product.stock || 0), 0);
+  const zeroStockCount = products.filter((product) => Number(product.stock || 0) <= 0).length;
+  const lowStockCount = products.filter((product) => {
+    const stock = Number(product.stock || 0);
+    return stock > 0 && stock <= lowThreshold;
+  }).length;
+  const inventoryValue = products.reduce(
+    (sum, product) => sum + parseMoney(getPurchasePrice(product) * Number(product.stock || 0)),
+    0
+  );
+
+  return {
+    lowThreshold,
+    totalProducts: products.length,
+    totalUnits,
+    zeroStockCount,
+    lowStockCount,
+    inventoryValue: parseMoney(inventoryValue)
+  };
+};
+
+const sortFinancialEntries = (entries = []) =>
+  [...entries].sort(
+    (left, right) =>
+      new Date(right.updatedAt || right.createdAt || right.dueDate || 0).getTime() -
+      new Date(left.updatedAt || left.createdAt || left.dueDate || 0).getTime()
+  );
+
+const getFinancialSummary = (entries = []) => {
+  const pending = entries.filter((entry) => entry.status !== "paid");
+  const paid = entries.filter((entry) => entry.status === "paid");
+
+  return {
+    total: parseMoney(entries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)),
+    pendingTotal: parseMoney(pending.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)),
+    paidTotal: parseMoney(paid.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)),
+    pendingCount: pending.length,
+    paidCount: paid.length
+  };
+};
+
+const sortSupportRequests = (entries = []) =>
+  [...entries].sort(
+    (left, right) =>
+      new Date(right.updatedAt || right.requestedAt || right.createdAt || 0).getTime() -
+      new Date(left.updatedAt || left.requestedAt || left.createdAt || 0).getTime()
+  );
+
+const ensureCashRegister = (draft) => {
+  if (!draft.cashRegister || typeof draft.cashRegister !== "object") {
+    draft.cashRegister = { currentSession: null, history: [] };
+  }
+
+  if (!Array.isArray(draft.cashRegister.history)) {
+    draft.cashRegister.history = [];
+  }
+
+  return draft.cashRegister;
+};
+
+const appendCashMovement = (draft, movement) => {
+  const cashRegister = ensureCashRegister(draft);
+  const session = cashRegister.currentSession;
+
+  if (!session) {
+    return;
+  }
+
+  session.movements = Array.isArray(session.movements) ? session.movements : [];
+  session.movements.push({
+    id: createId("cash-move"),
+    createdAt: new Date().toISOString(),
+    ...movement,
+    amount: parseMoney(movement.amount)
+  });
+  session.expectedBalance = parseMoney(Number(session.expectedBalance || 0) + Number(movement.amount || 0));
+};
+
+const recalculateCustomers = (draft) => {
+  draft.customers = (draft.customers || []).map((customer) => {
+    const previousOrders = (draft.orders || [])
+      .filter((order) => order.customerId === customer.id)
+      .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt));
+
+    const lastOrder = previousOrders[previousOrders.length - 1] || null;
+
+    return {
+      ...customer,
+      orderIds: previousOrders.map((order) => order.id),
+      lastOrderId: lastOrder?.id || null,
+      totalSpent: parseMoney(previousOrders.reduce((sum, order) => sum + Number(order.total || 0), 0)),
+      updatedAt: new Date().toISOString()
+    };
+  });
 };
 
 const aggregateTopProducts = (orders) => {
@@ -241,12 +376,17 @@ const buildDashboard = (db) => {
   const weeklyOrders = db.orders.filter((order) => isWithinDays(order.createdAt, 7));
   const monthlyOrders = db.orders.filter((order) => isWithinDays(order.createdAt, 30));
   const expenses = Array.isArray(db.expenses) ? [...db.expenses] : [];
+  const payables = sortFinancialEntries(Array.isArray(db.payables) ? db.payables : []);
+  const receivables = sortFinancialEntries(Array.isArray(db.receivables) ? db.receivables : []);
+  const supportRequests = sortSupportRequests(Array.isArray(db.supportRequests) ? db.supportRequests : []);
   const expensesSorted = expenses.sort(
     (left, right) =>
       new Date(right.createdAt || right.date || 0).getTime() -
       new Date(left.createdAt || left.date || 0).getTime()
   );
   const expensesTotal = expensesSorted.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const stockSummary = getStockSummary(db);
+  const cashRegister = ensureCashRegister({ ...db, cashRegister: db.cashRegister });
 
   const todayDeliveryOrders = todayOrders.filter((order) => resolveChannel(order) === "delivery");
   const todayPosOrders = todayOrders.filter((order) => resolveChannel(order) === "pos");
@@ -301,10 +441,19 @@ const buildDashboard = (db) => {
     ),
     customers: [...db.customers].sort((left, right) => right.totalSpent - left.totalSpent),
     products: [...db.products].sort((left, right) => left.name.localeCompare(right.name)),
+    categories: getCatalogCategories(db),
+    paymentMethods: getPaymentMethods(db),
     promotions: db.promotions,
     riders: Array.isArray(db.riders) ? db.riders : [],
     expenses: expensesSorted,
     expensesTotal: parseMoney(expensesTotal),
+    payables,
+    payablesSummary: getFinancialSummary(payables),
+    receivables,
+    receivablesSummary: getFinancialSummary(receivables),
+    supportRequests,
+    stockSummary,
+    cashRegister,
     deliveryFees: db.settings.deliveryFees,
     whatsapp: getWhatsAppStatus()
   };
@@ -630,6 +779,7 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
 
   try {
     const db = await updateDB((draft) => {
+      const availablePaymentMethods = getAvailablePaymentMethodValues(draft);
       const items = payload.items
         .map((item) => {
           const product = draft.products.find((entry) => entry.id === item.productId);
@@ -721,6 +871,11 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
           throw new Error("Informe ao menos uma forma de pagamento.");
         }
 
+        const invalidPayment = payments.find((entry) => !availablePaymentMethods.has(entry.method));
+        if (invalidPayment) {
+          throw new Error("Forma de pagamento invalida.");
+        }
+
         const paymentsTotal = parseMoney(payments.reduce((sum, entry) => sum + entry.amount, 0));
         const cashTotal = parseMoney(
           payments
@@ -741,6 +896,9 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
         paidTotal = paymentsTotal;
         changeDue = overpayment;
       } else {
+        if (!availablePaymentMethods.has(paymentMethod)) {
+          throw new Error("Forma de pagamento invalida.");
+        }
         payments = [{ method: paymentMethod, amount: total }];
       }
 
@@ -808,6 +966,20 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
         const product = draft.products.find((entry) => entry.id === item.productId);
         product.stock -= item.quantity;
       });
+
+      const cashEffect = parseMoney(
+        payments
+          .filter((entry) => entry.method === "dinheiro")
+          .reduce((sum, entry) => sum + Number(entry.amount || 0), 0) - changeDue
+      );
+
+      if (cashEffect > 0) {
+        appendCashMovement(draft, {
+          type: "sale",
+          amount: cashEffect,
+          note: `Venda PDV #${order.number}`
+        });
+      }
 
       if (customer) {
         customer.name = customerName;
@@ -999,11 +1171,12 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
   let createdProduct = null;
   const db = await updateDB((draft) => {
     const salePrice = resolveSalePrice(payload);
+    const category = String(payload.category || "").trim();
 
     createdProduct = {
       id: createId("prod"),
       name: payload.name,
-      category: payload.category,
+      category,
       volume: payload.volume || "",
       salePrice,
       purchasePrice: resolvePurchasePrice(payload, salePrice),
@@ -1012,8 +1185,12 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
       featured: payload.featured ?? false,
       badge: payload.badge || "",
       description: payload.description || "",
-      image: payload.image || getDefaultProductImage(payload.category)
+      image: payload.image || getDefaultProductImage(category)
     };
+    draft.categories = getCatalogCategories({
+      ...draft,
+      categories: [...(draft.categories || []), category]
+    });
     draft.products.push(createdProduct);
     return draft;
   });
@@ -1059,6 +1236,8 @@ app.put("/api/admin/products/:id", requireAdmin, async (request, response) => {
         image: payload.image ?? product.image
       });
 
+      draft.categories = getCatalogCategories(draft);
+
       updatedProduct = product;
       return draft;
     });
@@ -1100,6 +1279,51 @@ app.patch("/api/admin/products/:id/toggle", requireAdmin, async (request, respon
     return response.json(updatedProduct);
   } catch (error) {
     return response.status(400).json({ message: error.message || "Falha ao pausar produto." });
+  }
+});
+
+app.get("/api/admin/categories", requireAdmin, async (_request, response) => {
+  const db = await readDB();
+  response.json(getCatalogCategories(db));
+});
+
+app.post("/api/admin/categories", requireAdmin, async (request, response) => {
+  const name = String(request.body?.name || "").trim();
+
+  if (!name) {
+    return response.status(400).json({ message: "Informe o nome da categoria." });
+  }
+
+  const db = await updateDB((draft) => {
+    draft.categories = getCatalogCategories({
+      ...draft,
+      categories: [...(draft.categories || []), name]
+    });
+    return draft;
+  });
+
+  io.emit("catalog:updated", getStorePayload(db));
+  return response.status(201).json(db.categories);
+});
+
+app.delete("/api/admin/categories/:name", requireAdmin, async (request, response) => {
+  const name = decodeURIComponent(request.params.name || "").trim();
+
+  try {
+    const db = await updateDB((draft) => {
+      const categoryInUse = (draft.products || []).some((product) => product.category === name);
+      if (categoryInUse) {
+        throw new Error("Nao e possivel remover uma categoria em uso.");
+      }
+
+      draft.categories = (draft.categories || []).filter((category) => category !== name);
+      return draft;
+    });
+
+    io.emit("catalog:updated", getStorePayload(db));
+    return response.json(db.categories);
+  } catch (error) {
+    return response.status(400).json({ message: error.message || "Falha ao remover categoria." });
   }
 });
 
@@ -1283,6 +1507,338 @@ app.delete("/api/admin/expenses/:id", requireAdmin, async (request, response) =>
   });
 
   return response.json({ ok: true });
+});
+
+app.get("/api/admin/payables", requireAdmin, async (_request, response) => {
+  const db = await readDB();
+  response.json(sortFinancialEntries(db.payables || []));
+});
+
+app.post("/api/admin/payables", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+
+  if (!payload.title || !parseMoney(payload.amount)) {
+    return response.status(400).json({ message: "Informe titulo e valor da conta a pagar." });
+  }
+
+  const now = new Date().toISOString();
+  const payable = {
+    id: createId("payable"),
+    title: String(payload.title || "").trim(),
+    category: String(payload.category || "").trim(),
+    amount: parseMoney(payload.amount),
+    dueDate: parseExpenseDate(payload.dueDate, now),
+    note: String(payload.note || "").trim(),
+    status: payload.status === "paid" ? "paid" : "pending",
+    createdAt: now,
+    updatedAt: now
+  };
+
+  await updateDB((draft) => {
+    draft.payables = Array.isArray(draft.payables) ? draft.payables : [];
+    draft.payables.push(payable);
+    return draft;
+  });
+
+  return response.status(201).json(payable);
+});
+
+app.put("/api/admin/payables/:id", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+  const now = new Date().toISOString();
+  let updatedPayable = null;
+
+  try {
+    await updateDB((draft) => {
+      draft.payables = Array.isArray(draft.payables) ? draft.payables : [];
+      const payable = draft.payables.find((entry) => entry.id === request.params.id);
+
+      if (!payable) {
+        throw new Error("Conta a pagar nao encontrada.");
+      }
+
+      if (hasValue(payload.title)) payable.title = String(payload.title || "").trim();
+      if (hasValue(payload.category)) payable.category = String(payload.category || "").trim();
+      if (hasValue(payload.amount)) payable.amount = parseMoney(payload.amount);
+      if (hasValue(payload.dueDate)) {
+        payable.dueDate = parseExpenseDate(payload.dueDate, payable.dueDate || now);
+      }
+      if (hasValue(payload.note)) payable.note = String(payload.note || "").trim();
+      if (hasValue(payload.status)) {
+        payable.status = payload.status === "paid" ? "paid" : "pending";
+      }
+
+      payable.updatedAt = now;
+      updatedPayable = payable;
+      return draft;
+    });
+
+    return response.json(updatedPayable);
+  } catch (error) {
+    return response.status(404).json({ message: error.message || "Conta a pagar nao encontrada." });
+  }
+});
+
+app.delete("/api/admin/payables/:id", requireAdmin, async (request, response) => {
+  await updateDB((draft) => {
+    draft.payables = Array.isArray(draft.payables) ? draft.payables : [];
+    draft.payables = draft.payables.filter((entry) => entry.id !== request.params.id);
+    return draft;
+  });
+
+  return response.json({ ok: true });
+});
+
+app.get("/api/admin/receivables", requireAdmin, async (_request, response) => {
+  const db = await readDB();
+  response.json(sortFinancialEntries(db.receivables || []));
+});
+
+app.post("/api/admin/receivables", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+
+  if (!payload.title || !parseMoney(payload.amount)) {
+    return response.status(400).json({ message: "Informe titulo e valor da conta a receber." });
+  }
+
+  const now = new Date().toISOString();
+  const receivable = {
+    id: createId("receivable"),
+    title: String(payload.title || "").trim(),
+    customerName: String(payload.customerName || "").trim(),
+    customerPhone: normalizePhone(payload.customerPhone || ""),
+    category: String(payload.category || "").trim(),
+    amount: parseMoney(payload.amount),
+    dueDate: parseExpenseDate(payload.dueDate, now),
+    note: String(payload.note || "").trim(),
+    status: payload.status === "paid" ? "paid" : "pending",
+    createdAt: now,
+    updatedAt: now
+  };
+
+  await updateDB((draft) => {
+    draft.receivables = Array.isArray(draft.receivables) ? draft.receivables : [];
+    draft.receivables.push(receivable);
+    return draft;
+  });
+
+  return response.status(201).json(receivable);
+});
+
+app.put("/api/admin/receivables/:id", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+  const now = new Date().toISOString();
+  let updatedReceivable = null;
+
+  try {
+    await updateDB((draft) => {
+      draft.receivables = Array.isArray(draft.receivables) ? draft.receivables : [];
+      const receivable = draft.receivables.find((entry) => entry.id === request.params.id);
+
+      if (!receivable) {
+        throw new Error("Conta a receber nao encontrada.");
+      }
+
+      if (hasValue(payload.title)) receivable.title = String(payload.title || "").trim();
+      if (hasValue(payload.customerName)) {
+        receivable.customerName = String(payload.customerName || "").trim();
+      }
+      if (payload.customerPhone !== undefined) {
+        receivable.customerPhone = normalizePhone(payload.customerPhone || "");
+      }
+      if (hasValue(payload.category)) receivable.category = String(payload.category || "").trim();
+      if (hasValue(payload.amount)) receivable.amount = parseMoney(payload.amount);
+      if (hasValue(payload.dueDate)) {
+        receivable.dueDate = parseExpenseDate(payload.dueDate, receivable.dueDate || now);
+      }
+      if (hasValue(payload.note)) receivable.note = String(payload.note || "").trim();
+      if (hasValue(payload.status)) {
+        receivable.status = payload.status === "paid" ? "paid" : "pending";
+      }
+
+      receivable.updatedAt = now;
+      updatedReceivable = receivable;
+      return draft;
+    });
+
+    return response.json(updatedReceivable);
+  } catch (error) {
+    return response.status(404).json({ message: error.message || "Conta a receber nao encontrada." });
+  }
+});
+
+app.delete("/api/admin/receivables/:id", requireAdmin, async (request, response) => {
+  await updateDB((draft) => {
+    draft.receivables = Array.isArray(draft.receivables) ? draft.receivables : [];
+    draft.receivables = draft.receivables.filter((entry) => entry.id !== request.params.id);
+    return draft;
+  });
+
+  return response.json({ ok: true });
+});
+
+app.post("/api/admin/cash/open", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+  const openingBalance = parseMoney(payload.openingBalance);
+  const now = new Date().toISOString();
+  let session = null;
+
+  try {
+    await updateDB((draft) => {
+      const cashRegister = ensureCashRegister(draft);
+
+      if (cashRegister.currentSession) {
+        throw new Error("Ja existe um caixa aberto.");
+      }
+
+      session = {
+        id: createId("cash-session"),
+        openedAt: now,
+        closedAt: null,
+        openingBalance,
+        expectedBalance: openingBalance,
+        countedBalance: null,
+        difference: null,
+        note: String(payload.note || "").trim(),
+        movements: [
+          {
+            id: createId("cash-move"),
+            type: "opening",
+            amount: openingBalance,
+            note: "Abertura de caixa",
+            createdAt: now
+          }
+        ]
+      };
+
+      cashRegister.currentSession = session;
+      return draft;
+    });
+
+    return response.status(201).json(session);
+  } catch (error) {
+    return response.status(400).json({ message: error.message || "Falha ao abrir caixa." });
+  }
+});
+
+app.post("/api/admin/cash/movement", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+  const type = payload.type === "withdrawal" ? "withdrawal" : payload.type === "supply" ? "supply" : "";
+  const amount = parseMoney(payload.amount);
+  let session = null;
+
+  if (!type || amount <= 0) {
+    return response.status(400).json({ message: "Informe tipo e valor do movimento." });
+  }
+
+  try {
+    await updateDB((draft) => {
+      const cashRegister = ensureCashRegister(draft);
+
+      if (!cashRegister.currentSession) {
+        throw new Error("Abra o caixa antes de lancar movimentos.");
+      }
+
+      const signedAmount = type === "withdrawal" ? -amount : amount;
+      appendCashMovement(draft, {
+        type,
+        amount: signedAmount,
+        note: String(payload.note || "").trim() || (type === "withdrawal" ? "Retirada" : "Suprimento")
+      });
+      session = cashRegister.currentSession;
+      return draft;
+    });
+
+    return response.status(201).json(session);
+  } catch (error) {
+    return response.status(400).json({ message: error.message || "Falha ao registrar movimento." });
+  }
+});
+
+app.post("/api/admin/cash/close", requireAdmin, async (request, response) => {
+  const payload = request.body || {};
+  const countedBalance = parseMoney(payload.countedBalance);
+  const now = new Date().toISOString();
+  let closedSession = null;
+
+  try {
+    await updateDB((draft) => {
+      const cashRegister = ensureCashRegister(draft);
+      const session = cashRegister.currentSession;
+
+      if (!session) {
+        throw new Error("Nao existe caixa aberto.");
+      }
+
+      closedSession = {
+        ...session,
+        closedAt: now,
+        countedBalance,
+        difference: parseMoney(countedBalance - Number(session.expectedBalance || 0)),
+        note: String(payload.note || session.note || "").trim()
+      };
+
+      cashRegister.history = [closedSession, ...(cashRegister.history || [])].slice(0, 20);
+      cashRegister.currentSession = null;
+      return draft;
+    });
+
+    return response.json(closedSession);
+  } catch (error) {
+    return response.status(400).json({ message: error.message || "Falha ao fechar caixa." });
+  }
+});
+
+app.post("/api/admin/history/clear", requireAdmin, async (request, response) => {
+  const target = String(request.body?.target || "all").trim();
+
+  if (!["delivery", "pos", "all"].includes(target)) {
+    return response.status(400).json({ message: "Destino de limpeza invalido." });
+  }
+
+  const db = await updateDB((draft) => {
+    draft.orders = (draft.orders || []).filter((order) => {
+      if (target === "delivery") {
+        return order.channel === "pos";
+      }
+      if (target === "pos") {
+        return order.channel !== "pos";
+      }
+      return false;
+    });
+    recalculateCustomers(draft);
+    return draft;
+  });
+
+  io.emit("catalog:updated", getStorePayload(db));
+  io.emit("dashboard:update");
+  return response.json({ ok: true, remainingOrders: db.orders.length });
+});
+
+app.put("/api/admin/support-requests/:id/resolve", requireAdmin, async (request, response) => {
+  const now = new Date().toISOString();
+  let updatedRequest = null;
+
+  try {
+    await updateDB((draft) => {
+      draft.supportRequests = Array.isArray(draft.supportRequests) ? draft.supportRequests : [];
+      const entry = draft.supportRequests.find((item) => item.id === request.params.id);
+
+      if (!entry) {
+        throw new Error("Solicitacao nao encontrada.");
+      }
+
+      entry.status = "resolved";
+      entry.updatedAt = now;
+      updatedRequest = entry;
+      return draft;
+    });
+
+    io.emit("dashboard:update");
+    return response.json(updatedRequest);
+  } catch (error) {
+    return response.status(404).json({ message: error.message || "Solicitacao nao encontrada." });
+  }
 });
 
 app.get("/api/admin/riders", requireAdmin, async (_request, response) => {
