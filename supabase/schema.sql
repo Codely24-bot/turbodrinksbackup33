@@ -19,12 +19,31 @@ create table if not exists settings (
   updated_at timestamptz not null default now()
 );
 
+alter table settings add column if not exists store_name text;
+alter table settings add column if not exists tagline text;
+alter table settings add column if not exists banner_title text;
+alter table settings add column if not exists banner_subtitle text;
+alter table settings add column if not exists address_line text;
+alter table settings add column if not exists city text;
+alter table settings add column if not exists maps_url text;
+alter table settings add column if not exists opening_hours_text text;
+alter table settings add column if not exists whatsapp_number text;
+alter table settings add column if not exists quick_message text;
+alter table settings add column if not exists support_text text;
+alter table settings add column if not exists delivery_fees jsonb not null default '{}'::jsonb;
+alter table settings add column if not exists stock_low_threshold integer not null default 5;
+alter table settings add column if not exists created_at timestamptz not null default now();
+alter table settings add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists categories (
   id text primary key,
   name text not null unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table categories add column if not exists created_at timestamptz not null default now();
+alter table categories add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists payment_methods (
   value text primary key,
@@ -34,6 +53,11 @@ create table if not exists payment_methods (
   updated_at timestamptz not null default now()
 );
 
+alter table payment_methods add column if not exists label text;
+alter table payment_methods add column if not exists active boolean not null default true;
+alter table payment_methods add column if not exists created_at timestamptz not null default now();
+alter table payment_methods add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists delivery_zones (
   id text primary key,
   name text not null unique,
@@ -42,6 +66,12 @@ create table if not exists delivery_zones (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table delivery_zones add column if not exists name text;
+alter table delivery_zones add column if not exists fee numeric not null default 0;
+alter table delivery_zones add column if not exists active boolean not null default true;
+alter table delivery_zones add column if not exists created_at timestamptz not null default now();
+alter table delivery_zones add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists products (
   id text primary key,
@@ -60,6 +90,18 @@ create table if not exists products (
   updated_at timestamptz not null default now()
 );
 
+alter table products add column if not exists volume text;
+alter table products add column if not exists sale_price numeric not null default 0;
+alter table products add column if not exists purchase_price numeric not null default 0;
+alter table products add column if not exists stock integer not null default 0;
+alter table products add column if not exists active boolean not null default true;
+alter table products add column if not exists featured boolean not null default false;
+alter table products add column if not exists badge text;
+alter table products add column if not exists description text;
+alter table products add column if not exists image text;
+alter table products add column if not exists created_at timestamptz not null default now();
+alter table products add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists promotions (
   id text primary key,
   type text not null default 'daily',
@@ -76,6 +118,18 @@ create table if not exists promotions (
   updated_at timestamptz not null default now()
 );
 
+alter table promotions add column if not exists type text not null default 'daily';
+alter table promotions add column if not exists description text;
+alter table promotions add column if not exists code text;
+alter table promotions add column if not exists discount_type text not null default 'fixed';
+alter table promotions add column if not exists discount_value numeric not null default 0;
+alter table promotions add column if not exists minimum_order numeric not null default 0;
+alter table promotions add column if not exists neighborhood text;
+alter table promotions add column if not exists active boolean not null default true;
+alter table promotions add column if not exists highlight text;
+alter table promotions add column if not exists created_at timestamptz not null default now();
+alter table promotions add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists customers (
   id text primary key,
   name text not null,
@@ -90,6 +144,13 @@ create table if not exists customers (
   updated_at timestamptz not null default now()
 );
 
+alter table customers add column if not exists notes text;
+alter table customers add column if not exists total_spent numeric not null default 0;
+alter table customers add column if not exists order_ids jsonb not null default '[]'::jsonb;
+alter table customers add column if not exists last_order_id text;
+alter table customers add column if not exists created_at timestamptz not null default now();
+alter table customers add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists riders (
   id text primary key,
   name text not null,
@@ -98,6 +159,11 @@ create table if not exists riders (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table riders add column if not exists phone text;
+alter table riders add column if not exists active boolean not null default true;
+alter table riders add column if not exists created_at timestamptz not null default now();
+alter table riders add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists orders (
   id text primary key,
@@ -128,6 +194,30 @@ create table if not exists orders (
   status_timeline jsonb not null default '[]'::jsonb
 );
 
+alter table orders add column if not exists channel text not null default 'delivery';
+alter table orders add column if not exists customer_id text;
+alter table orders add column if not exists rider_id text;
+alter table orders add column if not exists customer jsonb not null default '{}'::jsonb;
+alter table orders add column if not exists payment_method text;
+alter table orders add column if not exists payments jsonb;
+alter table orders add column if not exists paid_total numeric;
+alter table orders add column if not exists change_due numeric;
+alter table orders add column if not exists coupon_code text;
+alter table orders add column if not exists subtotal numeric not null default 0;
+alter table orders add column if not exists delivery_fee numeric not null default 0;
+alter table orders add column if not exists discount numeric not null default 0;
+alter table orders add column if not exists manual_discount numeric;
+alter table orders add column if not exists manual_discount_percent numeric;
+alter table orders add column if not exists manual_discount_percent_amount numeric;
+alter table orders add column if not exists manual_surcharge numeric;
+alter table orders add column if not exists manual_surcharge_percent numeric;
+alter table orders add column if not exists manual_surcharge_percent_amount numeric;
+alter table orders add column if not exists promo_discount numeric;
+alter table orders add column if not exists total numeric not null default 0;
+alter table orders add column if not exists status text not null default 'received';
+alter table orders add column if not exists status_timeline jsonb not null default '[]'::jsonb;
+alter table orders add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists order_items (
   id bigserial primary key,
   order_id text not null references orders(id) on delete cascade,
@@ -138,6 +228,12 @@ create table if not exists order_items (
   quantity integer not null default 0,
   line_total numeric not null default 0
 );
+
+alter table order_items add column if not exists product_id text;
+alter table order_items add column if not exists volume text;
+alter table order_items add column if not exists unit_price numeric not null default 0;
+alter table order_items add column if not exists quantity integer not null default 0;
+alter table order_items add column if not exists line_total numeric not null default 0;
 
 create table if not exists expenses (
   id text primary key,
@@ -150,6 +246,13 @@ create table if not exists expenses (
   updated_at timestamptz not null default now()
 );
 
+alter table expenses add column if not exists category text;
+alter table expenses add column if not exists amount numeric not null default 0;
+alter table expenses add column if not exists date timestamptz not null default now();
+alter table expenses add column if not exists note text;
+alter table expenses add column if not exists created_at timestamptz not null default now();
+alter table expenses add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists payables (
   id text primary key,
   title text not null,
@@ -161,6 +264,14 @@ create table if not exists payables (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table payables add column if not exists category text;
+alter table payables add column if not exists amount numeric not null default 0;
+alter table payables add column if not exists due_date timestamptz not null default now();
+alter table payables add column if not exists note text;
+alter table payables add column if not exists status text not null default 'pending';
+alter table payables add column if not exists created_at timestamptz not null default now();
+alter table payables add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists receivables (
   id text primary key,
@@ -176,6 +287,16 @@ create table if not exists receivables (
   updated_at timestamptz not null default now()
 );
 
+alter table receivables add column if not exists customer_name text;
+alter table receivables add column if not exists customer_phone text;
+alter table receivables add column if not exists category text;
+alter table receivables add column if not exists amount numeric not null default 0;
+alter table receivables add column if not exists due_date timestamptz not null default now();
+alter table receivables add column if not exists note text;
+alter table receivables add column if not exists status text not null default 'pending';
+alter table receivables add column if not exists created_at timestamptz not null default now();
+alter table receivables add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists cash_sessions (
   id text primary key,
   opened_at timestamptz not null,
@@ -189,6 +310,15 @@ create table if not exists cash_sessions (
   updated_at timestamptz not null default now()
 );
 
+alter table cash_sessions add column if not exists closed_at timestamptz;
+alter table cash_sessions add column if not exists opening_balance numeric not null default 0;
+alter table cash_sessions add column if not exists expected_balance numeric not null default 0;
+alter table cash_sessions add column if not exists counted_balance numeric;
+alter table cash_sessions add column if not exists difference numeric;
+alter table cash_sessions add column if not exists note text;
+alter table cash_sessions add column if not exists created_at timestamptz not null default now();
+alter table cash_sessions add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists cash_movements (
   id text primary key,
   session_id text not null references cash_sessions(id) on delete cascade,
@@ -198,6 +328,12 @@ create table if not exists cash_movements (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table cash_movements add column if not exists type text;
+alter table cash_movements add column if not exists amount numeric not null default 0;
+alter table cash_movements add column if not exists note text;
+alter table cash_movements add column if not exists created_at timestamptz not null default now();
+alter table cash_movements add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists support_requests (
   id text primary key,
@@ -211,6 +347,14 @@ create table if not exists support_requests (
   updated_at timestamptz not null default now()
 );
 
+alter table support_requests add column if not exists customer_name text;
+alter table support_requests add column if not exists source text not null default 'whatsapp';
+alter table support_requests add column if not exists status text not null default 'pending';
+alter table support_requests add column if not exists note text;
+alter table support_requests add column if not exists requested_at timestamptz;
+alter table support_requests add column if not exists created_at timestamptz not null default now();
+alter table support_requests add column if not exists updated_at timestamptz not null default now();
+
 create index if not exists orders_created_at_idx on orders (created_at desc);
 create index if not exists orders_status_idx on orders (status);
 create index if not exists order_items_order_id_idx on order_items (order_id);
@@ -218,8 +362,10 @@ create index if not exists customers_phone_idx on customers (phone);
 create index if not exists payables_due_date_idx on payables (due_date desc);
 create index if not exists receivables_due_date_idx on receivables (due_date desc);
 create index if not exists cash_movements_session_id_idx on cash_movements (session_id);
+create index if not exists delivery_zones_name_idx on delivery_zones (name);
 create index if not exists support_requests_status_idx on support_requests (status);
 create index if not exists support_requests_requested_at_idx on support_requests (requested_at desc);
+create index if not exists support_requests_phone_idx on support_requests (phone);
 
 create table if not exists admin_profiles (
   id uuid primary key default gen_random_uuid(),
