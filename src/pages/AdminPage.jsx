@@ -1327,7 +1327,7 @@ function AdminPage() {
     );
   }
 
-  if (!dashboard || !reports) {
+  if (!dashboard) {
     return (
       <div className="page-shell admin">
         <header className="admin-header">
