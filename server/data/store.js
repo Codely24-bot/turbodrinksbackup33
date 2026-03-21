@@ -5,10 +5,32 @@ import { createClient } from "@supabase/supabase-js";
 import { initialData } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, "..", "..");
 const defaultDataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 const dataDir = process.env.DATA_DIR || process.env.APP_DATA_DIR || defaultDataDir;
 const resolvedDataDir = path.resolve(dataDir);
 const backupDir = path.join(resolvedDataDir, "backups");
+
+const loadEnvFile = () => {
+  const envPath = path.join(rootDir, ".env");
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+
+  const raw = fs.readFileSync(envPath, "utf-8");
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line || line.trim().startsWith("#")) continue;
+    const idx = line.indexOf("=");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (key && !(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+};
+
+loadEnvFile();
 
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
@@ -1123,6 +1145,7 @@ const logSupabaseConfigurationWarning = () => {
 };
 
 let bootstrapPromise = null;
+let lastStorageSyncError = "";
 
 export const bootstrapStorage = async () => {
   if (bootstrapPromise) {
@@ -1224,12 +1247,14 @@ export const updateDB = async (mutator) => {
     const draft = deepCopy(current);
     const result = normalizeDatabase(mutator(draft) ?? draft);
 
-    writeDBFile(result);
-
     try {
       await writeDBSupabase(result);
+      lastStorageSyncError = "";
+      writeDBFile(result);
     } catch (error) {
-      console.error("[storage-sync-error]", error?.message || error);
+      lastStorageSyncError = error?.message || String(error);
+      console.error("[storage-sync-error]", lastStorageSyncError);
+      throw error;
     }
 
     return result;
@@ -1262,6 +1287,7 @@ export const getStorageMeta = () => ({
   backupDir,
   supabaseEnabled,
   missingVariables: getSupabaseStatus().missing,
+  lastStorageSyncError,
   localMirrorOk: fs.existsSync(dbPath),
   backupCount: getBackupFiles().length,
   latestBackup: getBackupFiles()[0] || null
