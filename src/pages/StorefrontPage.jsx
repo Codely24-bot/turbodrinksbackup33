@@ -18,7 +18,8 @@ import CartDrawer from "../components/CartDrawer";
 const CART_KEY = "turbo_cart";
 const CUSTOMER_KEY = "turbo_customer";
 const LAST_ORDER_KEY = "turbo_last_order";
-const STORE_CACHE_KEY = "turbo_store_cache";
+const STORE_CACHE_KEY = "turbo_store_cache_v2";
+const LEGACY_STORE_CACHE_KEY = "turbo_store_cache";
 const fallbackImageByCategory = {
   Cervejas: "/products/beer.svg",
   Refrigerantes: "/products/soda.svg",
@@ -58,11 +59,29 @@ const sanitizeStoredCart = (value) =>
     .filter((item) => item.id && Number.isFinite(item.quantity) && item.quantity > 0);
 
 const formatCurrency = (value) => `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
-const getProductImage = (product) =>
-  String(product?.image || "").trim() ||
+const getApiProductImage = (product) => {
+  const version = String(product?.updatedAt || product?.createdAt || "").trim();
+  const versionSuffix = version ? `?v=${encodeURIComponent(version)}` : "";
+  return `/api/products/${encodeURIComponent(product.id)}/image${versionSuffix}`;
+};
+const resolveProductImage = (product, source = "") => {
+  const image = String(product?.image || "").trim();
+
+  if (image.startsWith("data:image/")) {
+    if (source === "supabase") {
+      return image;
+    }
+
+    return product?.id ? getApiProductImage(product) : "";
+  }
+
+  return image;
+};
+const getProductImage = (product, source = "") =>
+  resolveProductImage(product, source) ||
   fallbackImageByCategory[String(product?.category || "").trim()] ||
   "/products/combo.svg";
-const normalizeProduct = (product) => {
+const normalizeProduct = (product, source = "") => {
   const salePrice = Number(product?.salePrice ?? product?.price ?? 0);
   const originalPrice = Number(
     product?.originalPrice ?? product?.price ?? product?.salePrice ?? salePrice
@@ -70,7 +89,7 @@ const normalizeProduct = (product) => {
 
   return {
     ...product,
-    image: getProductImage(product),
+    image: getProductImage(product, source),
     price: salePrice,
     originalPrice
   };
@@ -83,8 +102,10 @@ const normalizeStore = (payload) => {
 
   return {
     ...payload,
-    products: (payload.products || []).map(normalizeProduct),
-    featuredProducts: (payload.featuredProducts || []).map(normalizeProduct)
+    products: (payload.products || []).map((product) => normalizeProduct(product, payload.source)),
+    featuredProducts: (payload.featuredProducts || []).map((product) =>
+      normalizeProduct(product, payload.source)
+    )
   };
 };
 const createCacheableStore = (payload) => {
@@ -105,9 +126,11 @@ const createCacheableStore = (payload) => {
 };
 const persistStoreCache = (payload) => {
   try {
+    localStorage.removeItem(LEGACY_STORE_CACHE_KEY);
     localStorage.setItem(STORE_CACHE_KEY, JSON.stringify(payload));
   } catch {
     try {
+      localStorage.removeItem(LEGACY_STORE_CACHE_KEY);
       localStorage.setItem(STORE_CACHE_KEY, JSON.stringify(createCacheableStore(payload)));
     } catch {
       localStorage.removeItem(STORE_CACHE_KEY);
@@ -116,7 +139,15 @@ const persistStoreCache = (payload) => {
 };
 const getCachedStore = () =>
   normalizeStore(
-    safeParse(localStorage.getItem(STORE_CACHE_KEY), {
+    safeParse((() => {
+      try {
+        localStorage.removeItem(LEGACY_STORE_CACHE_KEY);
+      } catch {
+        return localStorage.getItem(STORE_CACHE_KEY);
+      }
+
+      return localStorage.getItem(STORE_CACHE_KEY);
+    })(), {
       settings: { deliveryFees: {} },
       categories: [],
       featuredProducts: [],

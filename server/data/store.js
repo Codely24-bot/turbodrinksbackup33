@@ -1714,6 +1714,27 @@ export const readProductsList = async (limit = 50) => {
   }
 };
 
+export const readProductById = async (productId) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    return (db.products || []).find((entry) => entry.id === productId) || null;
+  }
+
+  try {
+    const rows = await fetchSupabaseRows("products", (query) => query.eq("id", productId).limit(1));
+    return rows.length ? normalizeProduct(mapProductRow(rows[0])) : null;
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    return (db.products || []).find((entry) => entry.id === productId) || null;
+  }
+};
+
 export const readPromotionsList = async (limit = 50) => {
   await bootstrapStorage();
 

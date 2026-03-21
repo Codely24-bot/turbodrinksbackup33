@@ -12,6 +12,7 @@ import {
   readCustomerLookup,
   readCustomersList,
   readOrderById,
+  readProductById,
   readOrdersList,
   readProductsList,
   readPromotionsList,
@@ -175,6 +176,34 @@ const getDefaultProductImage = (category) =>
 const isAllowedProductImage = (image) =>
   typeof image === "string" &&
   (image.startsWith("/products/") || image.startsWith("data:image/png;base64,"));
+const getProductImageVersion = (product) =>
+  encodeURIComponent(String(product?.updatedAt || product?.createdAt || getStorageRevision()));
+const getStorefrontProductImage = (product) => {
+  const image = String(product?.image || "").trim();
+
+  if (image.startsWith("data:image/") && product?.id) {
+    return `/api/products/${encodeURIComponent(product.id)}/image?v=${getProductImageVersion(product)}`;
+  }
+
+  return image;
+};
+const toStorefrontProduct = (product) => ({
+  ...product,
+  image: getStorefrontProductImage(product)
+});
+const parseDataImage = (image) => {
+  const normalizedImage = String(image || "").trim();
+  const match = normalizedImage.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    mimeType: match[1],
+    buffer: Buffer.from(match[2], "base64")
+  };
+};
 const getSalePrice = (product) => parseMoney(product.salePrice ?? product.price);
 const getPurchasePrice = (product) => {
   const salePrice = getSalePrice(product);
@@ -248,10 +277,11 @@ const getStorePayload = (db) => ({
     .sort(
       (left, right) =>
         Number(right.featured) - Number(left.featured) || getSalePrice(left) - getSalePrice(right)
-    ),
-  featuredProducts: db.products.filter(
-    (product) => product.active && product.stock > 0 && product.featured
-  ),
+    )
+    .map(toStorefrontProduct),
+  featuredProducts: db.products
+    .filter((product) => product.active && product.stock > 0 && product.featured)
+    .map(toStorefrontProduct),
   promotions: db.promotions.filter((promotion) => promotion.active),
   paymentMethods: getPaymentMethods(db).filter((method) => method.active)
 });
@@ -659,6 +689,22 @@ app.get("/api/store", asyncHandler(async (_request, response) => {
     return getStorePayload(db);
   });
   response.json(payload);
+}));
+
+app.get("/api/products/:id/image", asyncHandler(async (request, response) => {
+  const product = await readProductById(request.params.id);
+  const parsedImage = parseDataImage(product?.image);
+
+  if (!parsedImage) {
+    return response.status(404).end();
+  }
+
+  response.setHeader("Content-Type", parsedImage.mimeType);
+  response.setHeader(
+    "Cache-Control",
+    request.query.v ? "public, max-age=31536000, immutable" : "public, max-age=3600"
+  );
+  response.send(parsedImage.buffer);
 }));
 
 app.post("/api/customers/lookup", asyncHandler(async (request, response) => {
