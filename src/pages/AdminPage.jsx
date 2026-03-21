@@ -2281,15 +2281,13 @@ function AdminPage() {
                       .filter(Boolean)
                       .join(" • ")}
                   </small>
-                  {order.channel === "pos" ? (
-                    <button
-                      type="button"
-                      className="button button-outline button-compact"
-                      onClick={() => handleBrowserPrint(order)}
-                    >
-                      Imprimir
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="button button-outline button-compact"
+                    onClick={() => handleBrowserPrint(order)}
+                  >
+                    Imprimir
+                  </button>
                 </div>
               </div>
               {order.channel !== "pos" ? (
