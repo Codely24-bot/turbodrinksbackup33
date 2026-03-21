@@ -46,6 +46,8 @@ const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "123456";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "delivery-admin-token";
 
+const asyncHandler = (handler) => (request, response, next) =>
+  Promise.resolve(handler(request, response, next)).catch(next);
 
 const app = express();
 const server = createServer(app);
@@ -580,7 +582,7 @@ io.on("connection", (socket) => {
   });
 });
 
-app.get("/api/health", (_request, response) => {
+app.get("/api/health", asyncHandler(async (_request, response) => {
   response.json({
     ok: true,
     version: appVersion,
@@ -588,7 +590,7 @@ app.get("/api/health", (_request, response) => {
     startedAt,
     storage: getStorageMeta()
   });
-});
+}));
 
 app.get("/api/whatsapp/status", (_request, response) => {
   response.json(getWhatsAppStatus());
@@ -611,12 +613,12 @@ app.get("/api/whatsapp/qr.png", (_request, response) => {
   response.send(pngBuffer);
 });
 
-app.get("/api/store", async (_request, response) => {
+app.get("/api/store", asyncHandler(async (_request, response) => {
   const db = await readDB();
   response.json(getStorePayload(db));
-});
+}));
 
-app.post("/api/customers/lookup", async (request, response) => {
+app.post("/api/customers/lookup", asyncHandler(async (request, response) => {
   const db = await readDB();
   const phone = normalizePhone(request.body.phone);
   const customer = db.customers.find((entry) => normalizePhone(entry.phone) === phone);
@@ -632,9 +634,9 @@ app.post("/api/customers/lookup", async (request, response) => {
     lastOrder,
     trackingUrl: lastOrder ? buildTrackingUrl(lastOrder.id) : ""
   });
-});
+}));
 
-app.get("/api/orders/:id", async (request, response) => {
+app.get("/api/orders/:id", asyncHandler(async (request, response) => {
   const db = await readDB();
   const order = db.orders.find((entry) => entry.id === request.params.id);
 
@@ -646,7 +648,7 @@ app.get("/api/orders/:id", async (request, response) => {
     ...order,
     trackingUrl: buildTrackingUrl(order.id)
   });
-});
+}));
 
 app.post("/api/orders", async (request, response) => {
   const payload = request.body || {};
@@ -1191,7 +1193,7 @@ app.get("/api/admin/products", requireAdmin, async (_request, response) => {
   response.json(db.products);
 });
 
-app.post("/api/admin/products", requireAdmin, async (request, response) => {
+app.post("/api/admin/products", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
 
   if (!payload.name || !payload.category) {
@@ -1231,7 +1233,7 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
 
   io.emit("catalog:updated", getStorePayload(db));
   return response.status(201).json(createdProduct);
-});
+}));
 
 app.put("/api/admin/products/:id", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1283,7 +1285,7 @@ app.put("/api/admin/products/:id", requireAdmin, async (request, response) => {
   }
 });
 
-app.delete("/api/admin/products/:id", requireAdmin, async (request, response) => {
+app.delete("/api/admin/products/:id", requireAdmin, asyncHandler(async (request, response) => {
   const db = await updateDB((draft) => {
     draft.products = draft.products.filter((entry) => entry.id !== request.params.id);
     return draft;
@@ -1291,7 +1293,7 @@ app.delete("/api/admin/products/:id", requireAdmin, async (request, response) =>
 
   io.emit("catalog:updated", getStorePayload(db));
   return response.status(204).end();
-});
+}));
 
 app.patch("/api/admin/products/:id/toggle", requireAdmin, async (request, response) => {
   let updatedProduct = null;
@@ -1321,7 +1323,7 @@ app.get("/api/admin/categories", requireAdmin, async (_request, response) => {
   response.json(getCatalogCategories(db));
 });
 
-app.post("/api/admin/categories", requireAdmin, async (request, response) => {
+app.post("/api/admin/categories", requireAdmin, asyncHandler(async (request, response) => {
   const name = String(request.body?.name || "").trim();
 
   if (!name) {
@@ -1338,7 +1340,7 @@ app.post("/api/admin/categories", requireAdmin, async (request, response) => {
 
   io.emit("catalog:updated", getStorePayload(db));
   return response.status(201).json(db.categories);
-});
+}));
 
 app.delete("/api/admin/categories/:name", requireAdmin, async (request, response) => {
   const name = decodeURIComponent(request.params.name || "").trim();
@@ -1367,7 +1369,7 @@ app.get("/api/admin/promotions", requireAdmin, async (request, response) => {
   response.json([...db.promotions].slice(0, limit));
 });
 
-app.post("/api/admin/promotions", requireAdmin, async (request, response) => {
+app.post("/api/admin/promotions", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
   let createdPromotion = null;
 
@@ -1392,7 +1394,7 @@ app.post("/api/admin/promotions", requireAdmin, async (request, response) => {
 
   io.emit("catalog:updated");
   return response.status(201).json(createdPromotion);
-});
+}));
 
 app.put("/api/admin/promotions/:id", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1438,7 +1440,7 @@ app.put("/api/admin/promotions/:id", requireAdmin, async (request, response) => 
   }
 });
 
-app.delete("/api/admin/promotions/:id", requireAdmin, async (request, response) => {
+app.delete("/api/admin/promotions/:id", requireAdmin, asyncHandler(async (request, response) => {
   await updateDB((draft) => {
     draft.promotions = draft.promotions.filter((entry) => entry.id !== request.params.id);
     return draft;
@@ -1446,7 +1448,7 @@ app.delete("/api/admin/promotions/:id", requireAdmin, async (request, response) 
 
   io.emit("catalog:updated");
   return response.status(204).end();
-});
+}));
 
 app.get("/api/admin/expenses", requireAdmin, async (_request, response) => {
   const db = await readDB();
@@ -1460,7 +1462,7 @@ app.get("/api/admin/expenses", requireAdmin, async (_request, response) => {
   );
 });
 
-app.post("/api/admin/expenses", requireAdmin, async (request, response) => {
+app.post("/api/admin/expenses", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
 
   if (!payload.title || !parseMoney(payload.amount)) {
@@ -1491,7 +1493,7 @@ app.post("/api/admin/expenses", requireAdmin, async (request, response) => {
       (db.expenses || []).reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
     )
   });
-});
+}));
 
 app.put("/api/admin/expenses/:id", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1534,7 +1536,7 @@ app.put("/api/admin/expenses/:id", requireAdmin, async (request, response) => {
   }
 });
 
-app.delete("/api/admin/expenses/:id", requireAdmin, async (request, response) => {
+app.delete("/api/admin/expenses/:id", requireAdmin, asyncHandler(async (request, response) => {
   await updateDB((draft) => {
     draft.expenses = Array.isArray(draft.expenses) ? draft.expenses : [];
     draft.expenses = draft.expenses.filter((expense) => expense.id !== request.params.id);
@@ -1542,14 +1544,14 @@ app.delete("/api/admin/expenses/:id", requireAdmin, async (request, response) =>
   });
 
   return response.json({ ok: true });
-});
+}));
 
 app.get("/api/admin/payables", requireAdmin, async (_request, response) => {
   const db = await readDB();
   response.json(sortFinancialEntries(db.payables || []));
 });
 
-app.post("/api/admin/payables", requireAdmin, async (request, response) => {
+app.post("/api/admin/payables", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
 
   if (!payload.title || !parseMoney(payload.amount)) {
@@ -1576,7 +1578,7 @@ app.post("/api/admin/payables", requireAdmin, async (request, response) => {
   });
 
   return response.status(201).json(payable);
-});
+}));
 
 app.put("/api/admin/payables/:id", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1614,7 +1616,7 @@ app.put("/api/admin/payables/:id", requireAdmin, async (request, response) => {
   }
 });
 
-app.delete("/api/admin/payables/:id", requireAdmin, async (request, response) => {
+app.delete("/api/admin/payables/:id", requireAdmin, asyncHandler(async (request, response) => {
   await updateDB((draft) => {
     draft.payables = Array.isArray(draft.payables) ? draft.payables : [];
     draft.payables = draft.payables.filter((entry) => entry.id !== request.params.id);
@@ -1622,14 +1624,14 @@ app.delete("/api/admin/payables/:id", requireAdmin, async (request, response) =>
   });
 
   return response.json({ ok: true });
-});
+}));
 
 app.get("/api/admin/receivables", requireAdmin, async (_request, response) => {
   const db = await readDB();
   response.json(sortFinancialEntries(db.receivables || []));
 });
 
-app.post("/api/admin/receivables", requireAdmin, async (request, response) => {
+app.post("/api/admin/receivables", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
 
   if (!payload.title || !parseMoney(payload.amount)) {
@@ -1658,7 +1660,7 @@ app.post("/api/admin/receivables", requireAdmin, async (request, response) => {
   });
 
   return response.status(201).json(receivable);
-});
+}));
 
 app.put("/api/admin/receivables/:id", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1702,7 +1704,7 @@ app.put("/api/admin/receivables/:id", requireAdmin, async (request, response) =>
   }
 });
 
-app.delete("/api/admin/receivables/:id", requireAdmin, async (request, response) => {
+app.delete("/api/admin/receivables/:id", requireAdmin, asyncHandler(async (request, response) => {
   await updateDB((draft) => {
     draft.receivables = Array.isArray(draft.receivables) ? draft.receivables : [];
     draft.receivables = draft.receivables.filter((entry) => entry.id !== request.params.id);
@@ -1710,7 +1712,7 @@ app.delete("/api/admin/receivables/:id", requireAdmin, async (request, response)
   });
 
   return response.json({ ok: true });
-});
+}));
 
 app.post("/api/admin/cash/open", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1884,7 +1886,7 @@ app.get("/api/admin/riders", requireAdmin, async (_request, response) => {
   );
 });
 
-app.post("/api/admin/riders", requireAdmin, async (request, response) => {
+app.post("/api/admin/riders", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
 
   if (!payload.name) {
@@ -1908,7 +1910,7 @@ app.post("/api/admin/riders", requireAdmin, async (request, response) => {
   });
 
   return response.status(201).json(rider);
-});
+}));
 
 app.put("/api/admin/riders/:id", requireAdmin, async (request, response) => {
   const payload = request.body || {};
@@ -1945,7 +1947,7 @@ app.put("/api/admin/riders/:id", requireAdmin, async (request, response) => {
   }
 });
 
-app.delete("/api/admin/riders/:id", requireAdmin, async (request, response) => {
+app.delete("/api/admin/riders/:id", requireAdmin, asyncHandler(async (request, response) => {
   await updateDB((draft) => {
     draft.riders = Array.isArray(draft.riders) ? draft.riders : [];
     draft.riders = draft.riders.filter((rider) => rider.id !== request.params.id);
@@ -1956,7 +1958,7 @@ app.delete("/api/admin/riders/:id", requireAdmin, async (request, response) => {
   });
 
   return response.json({ ok: true });
-});
+}));
 
 app.put("/api/admin/orders/:id/rider", requireAdmin, async (request, response) => {
   const { riderId } = request.body || {};
@@ -2007,7 +2009,7 @@ app.get("/api/admin/customers", requireAdmin, async (request, response) => {
 const reportsCache = new Map();
 const REPORTS_CACHE_TTL_MS = 15000;
 
-app.post("/api/admin/customers", requireAdmin, async (request, response) => {
+app.post("/api/admin/customers", requireAdmin, asyncHandler(async (request, response) => {
   const payload = request.body || {};
   const name = String(payload.name || "").trim();
   const phone = normalizePhone(payload.phone);
@@ -2054,9 +2056,9 @@ app.post("/api/admin/customers", requireAdmin, async (request, response) => {
   } catch (error) {
     return response.status(400).json({ message: error.message || "Falha ao cadastrar cliente." });
   }
-});
+}));
 
-app.put("/api/admin/settings/fees", requireAdmin, async (request, response) => {
+app.put("/api/admin/settings/fees", requireAdmin, asyncHandler(async (request, response) => {
   const fees = request.body.fees || {};
 
   const db = await updateDB((draft) => {
@@ -2079,7 +2081,7 @@ app.put("/api/admin/settings/fees", requireAdmin, async (request, response) => {
 
   io.emit("catalog:updated", getStorePayload(db));
   return response.json(db.settings.deliveryFees);
-});
+}));
 
 app.get("/api/admin/reports", requireAdmin, async (request, response) => {
   const db = await readDB();
@@ -2126,6 +2128,17 @@ if (fs.existsSync(distDir)) {
     return response.sendFile(path.join(distDir, "index.html"));
   });
 }
+
+app.use((error, _request, response, _next) => {
+  const message = error?.message || "Erro interno do servidor.";
+  console.error("[api-error]", message);
+
+  if (response.headersSent) {
+    return;
+  }
+
+  response.status(500).json({ message });
+});
 
 initializeWhatsAppBot();
 bootstrapStorage()
