@@ -8,6 +8,14 @@ import { Server } from "socket.io";
 import {
   bootstrapStorage,
   createId,
+  readCategoriesList,
+  readCustomerLookup,
+  readCustomersList,
+  readOrderById,
+  readOrdersList,
+  readProductsList,
+  readPromotionsList,
+  readStoreData,
   getStorageMeta,
   getStorageRevision,
   readDB,
@@ -647,22 +655,19 @@ app.get("/api/whatsapp/qr.png", (_request, response) => {
 
 app.get("/api/store", asyncHandler(async (_request, response) => {
   const payload = await getCachedResponse("store", async () => {
-    const db = await readDB();
+    const db = await readStoreData();
     return getStorePayload(db);
   });
   response.json(payload);
 }));
 
 app.post("/api/customers/lookup", asyncHandler(async (request, response) => {
-  const db = await readDB();
   const phone = normalizePhone(request.body.phone);
-  const customer = db.customers.find((entry) => normalizePhone(entry.phone) === phone);
+  const { customer, lastOrder } = await readCustomerLookup(phone);
 
   if (!customer) {
     return response.json({ customer: null, lastOrder: null, trackingUrl: "" });
   }
-
-  const lastOrder = db.orders.find((order) => order.id === customer.lastOrderId) || null;
 
   return response.json({
     customer,
@@ -672,8 +677,7 @@ app.post("/api/customers/lookup", asyncHandler(async (request, response) => {
 }));
 
 app.get("/api/orders/:id", asyncHandler(async (request, response) => {
-  const db = await readDB();
-  const order = db.orders.find((entry) => entry.id === request.params.id);
+  const order = await readOrderById(request.params.id);
 
   if (!order) {
     return response.status(404).json({ message: "Pedido nao encontrado." });
@@ -1221,10 +1225,7 @@ app.get("/api/admin/storage", requireAdmin, async (_request, response) => {
 app.get("/api/admin/orders", requireAdmin, async (request, response) => {
   const limit = parseLimit(request.query.limit, 50);
   const payload = await getCachedResponse(`admin-orders:${limit}`, async () => {
-    const db = await readDB();
-    return [...db.orders]
-      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-      .slice(0, limit);
+    return readOrdersList(limit);
   });
 
   response.json(payload);
@@ -1233,10 +1234,7 @@ app.get("/api/admin/orders", requireAdmin, async (request, response) => {
 app.get("/api/admin/products", requireAdmin, async (request, response) => {
   const limit = parseLimit(request.query.limit, 50);
   const payload = await getCachedResponse(`admin-products:${limit}`, async () => {
-    const db = await readDB();
-    return [...db.products]
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .slice(0, limit);
+    return readProductsList(limit);
   });
   response.json(payload);
 });
@@ -1417,8 +1415,7 @@ app.patch("/api/admin/products/:id/toggle", requireAdmin, async (request, respon
 });
 
 app.get("/api/admin/categories", requireAdmin, async (_request, response) => {
-  const db = await readDB();
-  response.json(getCatalogCategories(db));
+  response.json(await readCategoriesList());
 });
 
 app.post("/api/admin/categories", requireAdmin, asyncHandler(async (request, response) => {
@@ -1464,8 +1461,7 @@ app.delete("/api/admin/categories/:name", requireAdmin, async (request, response
 app.get("/api/admin/promotions", requireAdmin, async (request, response) => {
   const limit = parseLimit(request.query.limit, 50);
   const payload = await getCachedResponse(`admin-promotions:${limit}`, async () => {
-    const db = await readDB();
-    return [...db.promotions].slice(0, limit);
+    return readPromotionsList(limit);
   });
   response.json(payload);
 });
@@ -2097,16 +2093,7 @@ app.put("/api/admin/orders/:id/rider", requireAdmin, async (request, response) =
 app.get("/api/admin/customers", requireAdmin, async (request, response) => {
   const limit = parseLimit(request.query.limit, 50);
   const payload = await getCachedResponse(`admin-customers:${limit}`, async () => {
-    const db = await readDB();
-    const ordersById = new Map((db.orders || []).map((order) => [order.id, order]));
-    const customers = db.customers.map((customer) => ({
-      ...customer,
-      previousOrders: customer.orderIds.map((orderId) => ordersById.get(orderId)).filter(Boolean)
-    }));
-
-    return customers
-      .sort((left, right) => right.totalSpent - left.totalSpent)
-      .slice(0, limit);
+    return readCustomersList(limit);
   });
 
   response.json(payload);

@@ -1018,6 +1018,164 @@ const readDBSupabase = async () => {
   return normalizeDatabase(db);
 };
 
+const fetchSupabaseRows = async (table, configure) => {
+  if (!supabase) {
+    throw new Error("Supabase nao configurado para leitura.");
+  }
+
+  let query = supabase.from(table).select("*");
+  query = typeof configure === "function" ? configure(query) : query;
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data || [];
+};
+
+const mapOrdersWithItems = (ordersRows = [], orderItemsRows = []) => {
+  const orderItemsByOrder = new Map();
+
+  orderItemsRows.forEach((item) => {
+    const list = orderItemsByOrder.get(item.order_id) || [];
+    list.push(mapOrderItemRow(item));
+    orderItemsByOrder.set(item.order_id, list);
+  });
+
+  return ordersRows.map((order) => mapOrderRow(order, orderItemsByOrder.get(order.id) || []));
+};
+
+const readStoreSupabase = async () => {
+  const [settings, productsRows, promotionsRows, deliveryZonesRows] = await Promise.all([
+    ensureSettingsRow(),
+    fetchSupabaseRows("products", (query) =>
+      query
+        .eq("active", true)
+        .gt("stock", 0)
+        .order("featured", { ascending: false })
+        .order("sale_price", { ascending: true })
+    ),
+    fetchSupabaseRows("promotions", (query) =>
+      query.eq("active", true).order("updated_at", { ascending: false })
+    ),
+    fetchSupabaseRows("delivery_zones", (query) => query.order("name", { ascending: true }))
+  ]);
+
+  const deliveryZones = deliveryZonesRows.map(mapDeliveryZoneRow);
+  const products = productsRows.map(mapProductRow);
+  const promotions = promotionsRows.map(mapPromotionRow);
+  const categories = [...new Set(products.map((product) => product.category).filter(Boolean))];
+
+  return normalizeDatabase({
+    settings: {
+      ...settings,
+      deliveryFees: deliveryZones.length
+        ? Object.fromEntries(
+            deliveryZones.filter((zone) => zone.active).map((zone) => [zone.name, zone.fee])
+          )
+        : settings.deliveryFees || {}
+    },
+    deliveryZones,
+    categories,
+    products,
+    promotions
+  });
+};
+
+const readOrderByIdSupabase = async (orderId) => {
+  const ordersRows = await fetchSupabaseRows("orders", (query) => query.eq("id", orderId).limit(1));
+  const order = ordersRows[0];
+
+  if (!order) {
+    return null;
+  }
+
+  const orderItemsRows = await fetchSupabaseRows("order_items", (query) =>
+    query.eq("order_id", orderId)
+  );
+
+  return normalizeOrder(mapOrderRow(order, orderItemsRows.map(mapOrderItemRow)));
+};
+
+const readOrdersListSupabase = async (limit = 50) => {
+  const ordersRows = await fetchSupabaseRows("orders", (query) =>
+    query.order("created_at", { ascending: false }).limit(limit)
+  );
+
+  if (!ordersRows.length) {
+    return [];
+  }
+
+  const orderItemsRows = await fetchSupabaseRows("order_items", (query) =>
+    query.in("order_id", ordersRows.map((order) => order.id))
+  );
+
+  return mapOrdersWithItems(ordersRows, orderItemsRows).map(normalizeOrder);
+};
+
+const readProductsListSupabase = async (limit = 50) => {
+  const productsRows = await fetchSupabaseRows("products", (query) =>
+    query.order("name", { ascending: true }).limit(limit)
+  );
+  return productsRows.map((row) => normalizeProduct(mapProductRow(row)));
+};
+
+const readPromotionsListSupabase = async (limit = 50) => {
+  const promotionsRows = await fetchSupabaseRows("promotions", (query) =>
+    query.order("updated_at", { ascending: false }).limit(limit)
+  );
+  return promotionsRows.map((row) => normalizePromotion(mapPromotionRow(row)));
+};
+
+const readCustomersListSupabase = async (limit = 50) => {
+  const customerRows = await fetchSupabaseRows("customers", (query) =>
+    query.order("total_spent", { ascending: false }).limit(limit)
+  );
+  const customers = customerRows.map((row) => normalizeCustomer(mapCustomerRow(row)));
+  const orderIds = [...new Set(customers.flatMap((customer) => customer.orderIds || []).filter(Boolean))];
+
+  if (!orderIds.length) {
+    return customers.map((customer) => ({ ...customer, previousOrders: [] }));
+  }
+
+  const [ordersRows, orderItemsRows] = await Promise.all([
+    fetchSupabaseRows("orders", (query) => query.in("id", orderIds)),
+    fetchSupabaseRows("order_items", (query) => query.in("order_id", orderIds))
+  ]);
+
+  const ordersById = new Map(
+    mapOrdersWithItems(ordersRows, orderItemsRows).map((order) => [order.id, normalizeOrder(order)])
+  );
+
+  return customers.map((customer) => ({
+    ...customer,
+    previousOrders: (customer.orderIds || []).map((orderId) => ordersById.get(orderId)).filter(Boolean)
+  }));
+};
+
+const readCustomerLookupSupabase = async (phone) => {
+  const customerRows = await fetchSupabaseRows("customers", (query) => query.eq("phone", phone).limit(1));
+  const customerRow = customerRows[0];
+
+  if (!customerRow) {
+    return { customer: null, lastOrder: null };
+  }
+
+  const customer = normalizeCustomer(mapCustomerRow(customerRow));
+  const lastOrder = customer.lastOrderId ? await readOrderByIdSupabase(customer.lastOrderId) : null;
+
+  return {
+    customer,
+    lastOrder
+  };
+};
+
+const readCategoriesSupabase = async () => {
+  const rows = await fetchSupabaseRows("categories", (query) => query.order("name", { ascending: true }));
+  return rows.map((row) => mapCategoryRow(row).name).filter(Boolean);
+};
+
 const deleteAll = async (table, column, sentinel) => {
   if (!supabase) {
     throw new Error("Supabase nao configurado para escrita.");
@@ -1458,6 +1616,213 @@ export const resetDB = async () => {
   }
   writeDBFile(initialData);
 };
+
+export const readStoreData = async () => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    return getStoreFileData();
+  }
+
+  try {
+    return await readStoreSupabase();
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    return getStoreFileData();
+  }
+};
+
+const getStoreFileData = () =>
+  readDB().then((db) =>
+    normalizeDatabase({
+      settings: db.settings,
+      deliveryZones: db.deliveryZones || [],
+      categories: db.categories || [],
+      products: db.products || [],
+      promotions: db.promotions || []
+    })
+  );
+
+export const readOrderById = async (orderId) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    return db.orders.find((entry) => entry.id === orderId) || null;
+  }
+
+  try {
+    return await readOrderByIdSupabase(orderId);
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    return db.orders.find((entry) => entry.id === orderId) || null;
+  }
+};
+
+export const readOrdersList = async (limit = 50) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    return [...db.orders]
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, limit);
+  }
+
+  try {
+    return await readOrdersListSupabase(limit);
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    return [...db.orders]
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, limit);
+  }
+};
+
+export const readProductsList = async (limit = 50) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    return [...db.products]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .slice(0, limit);
+  }
+
+  try {
+    return await readProductsListSupabase(limit);
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    return [...db.products]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .slice(0, limit);
+  }
+};
+
+export const readPromotionsList = async (limit = 50) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    return [...db.promotions].slice(0, limit);
+  }
+
+  try {
+    return await readPromotionsListSupabase(limit);
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    return [...db.promotions].slice(0, limit);
+  }
+};
+
+export const readCustomersList = async (limit = 50) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    const ordersById = new Map((db.orders || []).map((order) => [order.id, order]));
+    return db.customers
+      .map((customer) => ({
+        ...customer,
+        previousOrders: (customer.orderIds || []).map((orderId) => ordersById.get(orderId)).filter(Boolean)
+      }))
+      .sort((left, right) => right.totalSpent - left.totalSpent)
+      .slice(0, limit);
+  }
+
+  try {
+    return await readCustomersListSupabase(limit);
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    const ordersById = new Map((db.orders || []).map((order) => [order.id, order]));
+    return db.customers
+      .map((customer) => ({
+        ...customer,
+        previousOrders: (customer.orderIds || []).map((orderId) => ordersById.get(orderId)).filter(Boolean)
+      }))
+      .sort((left, right) => right.totalSpent - left.totalSpent)
+      .slice(0, limit);
+  }
+};
+
+export const readCustomerLookup = async (phone) => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    const customer = db.customers.find((entry) => entry.phone === phone) || null;
+    const lastOrder = customer?.lastOrderId
+      ? db.orders.find((order) => order.id === customer.lastOrderId) || null
+      : null;
+
+    return { customer, lastOrder };
+  }
+
+  try {
+    return await readCustomerLookupSupabase(phone);
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    const customer = db.customers.find((entry) => entry.phone === phone) || null;
+    const lastOrder = customer?.lastOrderId
+      ? db.orders.find((order) => order.id === customer.lastOrderId) || null
+      : null;
+
+    return { customer, lastOrder };
+  }
+};
+
+export const readCategoriesList = async () => {
+  await bootstrapStorage();
+
+  if (!supabaseEnabled) {
+    const db = await readDB();
+    return getCatalogCategoriesFromDb(db);
+  }
+
+  try {
+    const categories = await readCategoriesSupabase();
+    return categories.length ? categories : getCatalogCategoriesFromDb(await readDB());
+  } catch (error) {
+    if (strictSupabaseMode) {
+      throw error;
+    }
+
+    const db = await readDB();
+    return getCatalogCategoriesFromDb(db);
+  }
+};
+
+const getCatalogCategoriesFromDb = (db) =>
+  [...new Set([...(db.categories || []), ...((db.products || []).map((product) => product.category))])]
+    .map((category) => String(category || "").trim())
+    .filter(Boolean);
 
 export const getDataDir = () => resolvedDataDir;
 export const getStorageRevision = () => storageRevision;
