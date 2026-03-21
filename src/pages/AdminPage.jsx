@@ -958,6 +958,30 @@ function AdminPage() {
     }
   };
 
+  const refreshProductsOnly = async (customLimit = productLimit) => {
+    await loadData(token, true, {
+      includeBase: false,
+      resources: ["products"],
+      productFetchLimit: customLimit
+    });
+  };
+
+  const runProductsAction = async (action, successMessage, options = {}) => {
+    setSaving(true);
+    setMessage("");
+    try {
+      await action();
+      await refreshProductsOnly(options.productFetchLimit);
+      setMessage(successMessage);
+      return true;
+    } catch (error) {
+      setMessage(error.message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const loadMoreOrders = async () => {
     const nextVisibleCount = visibleOrderCount + DEFAULT_PAGE_SIZE;
     if (nextVisibleCount <= orders.length) {
@@ -1499,7 +1523,7 @@ function AdminPage() {
   }
 
   const saveProduct = async () => {
-    const ok = await runAction(
+    const ok = await runProductsAction(
       () =>
         editingProductId
           ? api.updateProduct(token, editingProductId, productForm)
@@ -3180,8 +3204,8 @@ function AdminPage() {
                 </div>
                 <div className="card-actions">
                   <button type="button" className="button button-soft" onClick={() => { setActiveTab("products"); setEditingProductId(product.id); setProductForm(getProductFormState(product)); setMessage(""); }}>Editar</button>
-                  <button type="button" className="button button-outline" onClick={() => runAction(() => api.toggleProduct(token, product.id), product.active ? "Produto pausado." : "Produto ativado.")}>{product.active ? "Pausar" : "Ativar"}</button>
-                  <button type="button" className="button button-muted" onClick={() => runAction(() => api.deleteProduct(token, product.id), "Produto removido.")}>Remover</button>
+                  <button type="button" className="button button-outline" onClick={() => runProductsAction(() => api.toggleProduct(token, product.id), product.active ? "Produto pausado." : "Produto ativado.")}>{product.active ? "Pausar" : "Ativar"}</button>
+                  <button type="button" className="button button-muted" onClick={() => runProductsAction(() => api.deleteProduct(token, product.id), "Produto removido.")}>Remover</button>
                 </div>
               </article>
             ))}
