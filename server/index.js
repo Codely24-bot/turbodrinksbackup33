@@ -73,6 +73,7 @@ const defaultProductImageByCategory = {
 
 const defaultPaymentMethods = [
   { value: "dinheiro", label: "Dinheiro", active: true },
+  { value: "fiado", label: "Fiado", active: true },
   { value: "pix_key", label: "Chave PIX", active: true },
   { value: "pix_qr", label: "Chave PIX QR Code", active: true },
   { value: "credit_card", label: "Cartao de Credito", active: true },
@@ -102,16 +103,19 @@ const getCatalogCategories = (db) =>
     .filter(Boolean);
 const getPaymentMethods = (db) => {
   const methods = Array.isArray(db.paymentMethods) && db.paymentMethods.length
-    ? db.paymentMethods
+    ? [...db.paymentMethods, ...defaultPaymentMethods]
     : defaultPaymentMethods;
 
-  return methods
-    .map((method) => ({
+  return [...new Map(
+    methods
+      .map((method) => ({
       value: String(method?.value || "").trim(),
       label: String(method?.label || method?.value || "").trim(),
       active: method?.active ?? true
-    }))
-    .filter((method) => method.value && method.label);
+      }))
+      .filter((method) => method.value && method.label)
+      .map((method) => [method.value, method])
+  ).values()];
 };
 const getAvailablePaymentMethodValues = (db) =>
   new Set([
@@ -872,6 +876,10 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
       const customerNeighborhood = String(payload.neighborhood || "").trim() || "Loja";
       const total = parseMoney(Math.max(subtotal - discount + manualSurchargeTotal, 0));
       const rawPayments = Array.isArray(payload.payments) ? payload.payments : [];
+      const creditContactName = String(payload.creditContactName || "").trim();
+      const creditContactPhone = normalizePhone(payload.creditContactPhone || "");
+      const creditDueDate = String(payload.creditDueDate || "").trim();
+      const creditNote = String(payload.creditNote || "").trim();
       let payments = [];
       let paidTotal = total;
       let changeDue = 0;
@@ -894,6 +902,12 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
           throw new Error("Forma de pagamento invalida.");
         }
 
+        const creditTotal = parseMoney(
+          payments
+            .filter((entry) => entry.method === "fiado")
+            .reduce((sum, entry) => sum + entry.amount, 0)
+        );
+
         const paymentsTotal = parseMoney(payments.reduce((sum, entry) => sum + entry.amount, 0));
         const cashTotal = parseMoney(
           payments
@@ -908,6 +922,16 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
 
         if (overpayment > 0 && cashTotal < overpayment) {
           throw new Error("Troco maior que dinheiro informado.");
+        }
+
+        if (creditTotal > 0) {
+          if (!creditContactName || !creditContactPhone) {
+            throw new Error("Informe nome e telefone do fiado antes de finalizar a venda.");
+          }
+
+          if (!creditDueDate) {
+            throw new Error("Informe a data de vencimento do fiado.");
+          }
         }
 
         paymentMethod = payments.length === 1 ? payments[0].method : "multiple";
@@ -957,7 +981,16 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
           phone: customerPhone,
           address: customerAddress,
           neighborhood: customerNeighborhood,
-          note: payload.note || ""
+          note: payload.note || "",
+          creditContact:
+            payments.some((entry) => entry.method === "fiado")
+              ? {
+                  name: creditContactName,
+                  phone: creditContactPhone,
+                  dueDate: creditDueDate,
+                  note: creditNote
+                }
+              : null
         },
         items,
         paymentMethod,
@@ -1009,6 +1042,31 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
         customer.lastOrderId = order.id;
         customer.updatedAt = now;
         customer.orderIds = [...new Set([...(customer.orderIds || []), order.id])];
+      }
+
+      const creditTotal = parseMoney(
+        payments
+          .filter((entry) => entry.method === "fiado")
+          .reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+      );
+
+      if (creditTotal > 0) {
+        draft.receivables = Array.isArray(draft.receivables) ? draft.receivables : [];
+        draft.receivables.push({
+          id: createId("receivable"),
+          title: `Fiado PDV #${order.number}`,
+          customerName: creditContactName || customerName,
+          customerPhone: creditContactPhone || customerPhone,
+          category: "Fiado PDV",
+          amount: creditTotal,
+          dueDate: parseExpenseDate(creditDueDate, now),
+          note:
+            creditNote ||
+            `Gerado automaticamente pela venda PDV #${order.number}.`,
+          status: "pending",
+          createdAt: now,
+          updatedAt: now
+        });
       }
 
       draft.orders.push(order);

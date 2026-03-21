@@ -153,10 +153,15 @@ const defaultPosForm = {
   manualDiscount: "",
   manualDiscountPercent: "",
   manualSurcharge: "",
-  manualSurchargePercent: ""
+  manualSurchargePercent: "",
+  creditContactName: "",
+  creditContactPhone: "",
+  creditDueDate: "",
+  creditNote: ""
 };
 
 const posPaymentOptions = [
+  { value: "fiado", label: "Fiado" },
   { value: "pix_key", label: "Chave PIX" },
   { value: "pix_qr", label: "Chave PIX QR Code" },
   { value: "dinheiro", label: "Dinheiro" },
@@ -179,6 +184,7 @@ const createFeeRow = (overrides = {}) => ({
   id: `fee-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
   name: "",
   value: "",
+  isEditing: false,
   ...overrides
 });
 
@@ -643,7 +649,7 @@ function AdminPage() {
         setDashboard(payloads.dashboard);
         setFeeRows(
           Object.entries(payloads.dashboard.deliveryFees || {}).map(([name, value]) =>
-            createFeeRow({ name, value: String(value ?? "") })
+            createFeeRow({ name, value: String(value ?? ""), isEditing: false })
           )
         );
       }
@@ -1215,6 +1221,10 @@ function AdminPage() {
     (sum, payment) => sum + toCents(payment.amount),
     0
   );
+  const posCreditTotalCents = posPayments.reduce(
+    (sum, payment) => (payment.method === "fiado" ? sum + toCents(payment.amount) : sum),
+    0
+  );
   const posCashTotalCents = posPayments.reduce(
     (sum, payment) => (payment.method === "dinheiro" ? sum + toCents(payment.amount) : sum),
     0
@@ -1223,11 +1233,21 @@ function AdminPage() {
   const posOverpaymentCents = Math.max(posPaymentsTotalCents - posTotalCents, 0);
   const posRemainingCents = Math.max(posTotalCents - posPaymentsTotalCents, 0);
   const posPaymentsTotal = fromCents(posPaymentsTotalCents);
+  const posCreditTotal = fromCents(posCreditTotalCents);
   const posOverpayment = fromCents(posOverpaymentCents);
   const posRemaining = fromCents(posRemainingCents);
   const posInvalidChange = posOverpaymentCents > 0 && posCashTotalCents < posOverpaymentCents;
+  const posUsesCredit = posCreditTotalCents > 0;
+  const posCreditDetailsReady = Boolean(
+    posForm.creditContactName.trim() &&
+      posForm.creditContactPhone.trim() &&
+      posForm.creditDueDate
+  );
   const posCanSubmit =
-    posCartItems.length > 0 && posPaymentsTotalCents >= posTotalCents && !posInvalidChange;
+    posCartItems.length > 0 &&
+    posPaymentsTotalCents >= posTotalCents &&
+    !posInvalidChange &&
+    (!posUsesCredit || posCreditDetailsReady);
   const posFilteredProducts = productCatalog
     .filter((product) => product.active && product.stock > 0)
     .filter((product) => (posCategory === "Todos" ? true : product.category === posCategory))
@@ -1436,6 +1456,32 @@ function AdminPage() {
         ),
       "Taxas atualizadas."
     );
+
+  const addFeeRow = () => {
+    setFeeRows((current) => [...current, createFeeRow({ isEditing: true })]);
+  };
+
+  const editFeeRow = (rowId) => {
+    setFeeRows((current) =>
+      current.map((entry) =>
+        entry.id === rowId ? { ...entry, isEditing: true } : entry
+      )
+    );
+  };
+
+  const stopEditingFeeRow = (rowId) => {
+    setFeeRows((current) =>
+      current
+        .map((entry) =>
+          entry.id === rowId ? { ...entry, isEditing: false } : entry
+        )
+        .filter((entry) => entry.name.trim() || entry.value)
+    );
+  };
+
+  const removeFeeRow = (rowId) => {
+    setFeeRows((current) => current.filter((entry) => entry.id !== rowId));
+  };
 
   const saveCustomer = async () => {
     const payload = {
@@ -1970,6 +2016,11 @@ function AdminPage() {
       return;
     }
 
+    if (posUsesCredit && !posCreditDetailsReady) {
+      setPosFeedback("Preencha nome, telefone e vencimento do fiado.");
+      return;
+    }
+
     setPosSubmitting(true);
     setPosFeedback("");
 
@@ -1987,6 +2038,10 @@ function AdminPage() {
         manualDiscountPercent: clampPercent(posForm.manualDiscountPercent),
         manualSurcharge: parseAmount(posForm.manualSurcharge),
         manualSurchargePercent: clampPercent(posForm.manualSurchargePercent),
+        creditContactName: posForm.creditContactName,
+        creditContactPhone: posForm.creditContactPhone,
+        creditDueDate: posForm.creditDueDate,
+        creditNote: posForm.creditNote,
         items: posCartItems.map((item) => ({
           productId: item.id,
           quantity: item.quantity
@@ -2309,6 +2364,144 @@ function AdminPage() {
 
       {activeTab === "pos" ? (
         <section className="admin-grid pos-grid">
+          <article className="admin-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Caixa PDV</span>
+                <h2>Abertura, suprimento e fechamento</h2>
+              </div>
+              <span className={`status-pill ${cashSession ? "is-online" : "is-disabled"}`}>
+                {cashSession ? "Caixa aberto" : "Caixa fechado"}
+              </span>
+            </div>
+            <div className="summary-list">
+              <div><span>Status</span><strong>{cashSession ? "Aberto" : "Fechado"}</strong></div>
+              <div><span>Saldo esperado</span><strong>{formatCurrency(cashSession?.expectedBalance || 0)}</strong></div>
+              <div><span>Abertura</span><strong>{cashSession?.openedAt ? formatDate(cashSession.openedAt) : "-"}</strong></div>
+              <div><span>Fechamentos salvos</span><strong>{cashHistory.length}</strong></div>
+            </div>
+            {!cashSession ? (
+              <div className="expense-form">
+                <div className="field-grid">
+                  <label>
+                    Valor de abertura
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashOpenForm.openingBalance}
+                      onChange={(event) =>
+                        setCashOpenForm((current) => ({ ...current, openingBalance: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </label>
+                  <label>
+                    Observacao
+                    <input
+                      value={cashOpenForm.note}
+                      onChange={(event) =>
+                        setCashOpenForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Turno da tarde, abertura da loja..."
+                    />
+                  </label>
+                </div>
+                <button type="button" className="button button-primary" disabled={saving} onClick={openCashRegister}>
+                  <Wallet size={16} />
+                  Abrir caixa
+                </button>
+              </div>
+            ) : (
+              <div className="expense-form">
+                <div className="field-grid">
+                  <label>
+                    Movimento
+                    <select
+                      value={cashMovementForm.type}
+                      onChange={(event) =>
+                        setCashMovementForm((current) => ({ ...current, type: event.target.value }))
+                      }
+                    >
+                      <option value="withdrawal">Retirada de caixa</option>
+                      <option value="supply">Suprimento de caixa</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valor
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashMovementForm.amount}
+                      onChange={(event) =>
+                        setCashMovementForm((current) => ({ ...current, amount: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </label>
+                  <label className="field-span">
+                    Observacao
+                    <input
+                      value={cashMovementForm.note}
+                      onChange={(event) =>
+                        setCashMovementForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Motivo do movimento"
+                    />
+                  </label>
+                  <label>
+                    Saldo contado
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashCloseForm.countedBalance}
+                      onChange={(event) =>
+                        setCashCloseForm((current) => ({ ...current, countedBalance: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </label>
+                  <label>
+                    Fechamento
+                    <input
+                      value={cashCloseForm.note}
+                      onChange={(event) =>
+                        setCashCloseForm((current) => ({ ...current, note: event.target.value }))
+                      }
+                      placeholder="Observacoes do fechamento"
+                    />
+                  </label>
+                </div>
+                <div className="card-actions">
+                  <button type="button" className="button button-outline" disabled={saving} onClick={createCashMovement}>
+                    {cashMovementForm.type === "withdrawal" ? "Registrar retirada" : "Registrar suprimento"}
+                  </button>
+                  <button type="button" className="button button-primary" disabled={saving} onClick={closeCashRegister}>
+                    Fechar caixa
+                  </button>
+                </div>
+                {(cashSession.movements || []).length ? (
+                  <div className="expense-list">
+                    {cashSession.movements.slice().reverse().slice(0, 6).map((movement) => (
+                      <div key={movement.id} className="expense-row">
+                        <div>
+                          <strong>{movement.type}</strong>
+                          <span>{movement.createdAt ? formatDate(movement.createdAt) : "-"}</span>
+                        </div>
+                        <div className="expense-actions">
+                          <strong>{movement.amount < 0 ? "- " : ""}{formatCurrency(Math.abs(Number(movement.amount || 0)))}</strong>
+                          <span>{movement.note || "Sem observacao"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </article>
+
           <article className="admin-card pos-products">
             <div className="card-header">
               <div>
@@ -2618,6 +2811,64 @@ function AdminPage() {
                   placeholder="Informacoes internas, forma de retirada, etc."
                 />
               </label>
+
+              {posUsesCredit ? (
+                <div className="form-grid">
+                  <label>
+                    Nome do fiado
+                    <input
+                      value={posForm.creditContactName}
+                      onChange={(event) =>
+                        setPosForm((current) => ({
+                          ...current,
+                          creditContactName: event.target.value
+                        }))
+                      }
+                      placeholder="Quem esta levando no fiado"
+                    />
+                  </label>
+                  <label>
+                    Telefone do fiado
+                    <input
+                      value={posForm.creditContactPhone}
+                      onChange={(event) =>
+                        setPosForm((current) => ({
+                          ...current,
+                          creditContactPhone: event.target.value
+                        }))
+                      }
+                      placeholder="(00) 00000-0000"
+                    />
+                  </label>
+                  <label>
+                    Vencimento do fiado
+                    <input
+                      type="date"
+                      value={posForm.creditDueDate}
+                      onChange={(event) =>
+                        setPosForm((current) => ({
+                          ...current,
+                          creditDueDate: event.target.value
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-span">
+                    Observacao do fiado
+                    <textarea
+                      rows="2"
+                      value={posForm.creditNote}
+                      onChange={(event) =>
+                        setPosForm((current) => ({
+                          ...current,
+                          creditNote: event.target.value
+                        }))
+                      }
+                      placeholder="Referencia, combinado de pagamento, etc."
+                    />
+                  </label>
+                </div>
+              ) : null}
             </div>
 
             <div className="pos-cart-footer">
@@ -2659,6 +2910,12 @@ function AdminPage() {
                 <span>Pago</span>
                 <strong>{formatCurrency(posPaymentsTotal)}</strong>
               </div>
+              {posUsesCredit ? (
+                <div className="pos-total-line">
+                  <span>Lancado em fiado</span>
+                  <strong>{formatCurrency(posCreditTotal)}</strong>
+                </div>
+              ) : null}
               {posRemaining > 0 ? (
                 <div className="pos-total-line">
                   <span>Falta pagar</span>
@@ -3078,144 +3335,6 @@ function AdminPage() {
           <article className="admin-card">
             <div className="card-header">
               <div>
-                <span className="eyebrow">Caixa</span>
-                <h2>Abertura e fechamento</h2>
-              </div>
-              <span className={`status-pill ${cashSession ? "is-online" : "is-disabled"}`}>
-                {cashSession ? "Caixa aberto" : "Caixa fechado"}
-              </span>
-            </div>
-            <div className="summary-list">
-              <div><span>Status</span><strong>{cashSession ? "Aberto" : "Fechado"}</strong></div>
-              <div><span>Saldo esperado</span><strong>{formatCurrency(cashSession?.expectedBalance || 0)}</strong></div>
-              <div><span>Abertura</span><strong>{cashSession?.openedAt ? formatDate(cashSession.openedAt) : "-"}</strong></div>
-              <div><span>Fechamentos salvos</span><strong>{cashHistory.length}</strong></div>
-            </div>
-            {!cashSession ? (
-              <div className="expense-form">
-                <div className="field-grid">
-                  <label>
-                    Valor de abertura
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashOpenForm.openingBalance}
-                      onChange={(event) =>
-                        setCashOpenForm((current) => ({ ...current, openingBalance: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label>
-                    Observacao
-                    <input
-                      value={cashOpenForm.note}
-                      onChange={(event) =>
-                        setCashOpenForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Turno da tarde, abertura da loja..."
-                    />
-                  </label>
-                </div>
-                <button type="button" className="button button-primary" disabled={saving} onClick={openCashRegister}>
-                  <Wallet size={16} />
-                  Abrir caixa
-                </button>
-              </div>
-            ) : (
-              <div className="expense-form">
-                <div className="field-grid">
-                  <label>
-                    Movimento
-                    <select
-                      value={cashMovementForm.type}
-                      onChange={(event) =>
-                        setCashMovementForm((current) => ({ ...current, type: event.target.value }))
-                      }
-                    >
-                      <option value="withdrawal">Retirada de caixa</option>
-                      <option value="supply">Suprimento de caixa</option>
-                    </select>
-                  </label>
-                  <label>
-                    Valor
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashMovementForm.amount}
-                      onChange={(event) =>
-                        setCashMovementForm((current) => ({ ...current, amount: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label className="field-span">
-                    Observacao
-                    <input
-                      value={cashMovementForm.note}
-                      onChange={(event) =>
-                        setCashMovementForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Motivo do movimento"
-                    />
-                  </label>
-                  <label>
-                    Saldo contado
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashCloseForm.countedBalance}
-                      onChange={(event) =>
-                        setCashCloseForm((current) => ({ ...current, countedBalance: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label>
-                    Fechamento
-                    <input
-                      value={cashCloseForm.note}
-                      onChange={(event) =>
-                        setCashCloseForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Observacoes do fechamento"
-                    />
-                  </label>
-                </div>
-                <div className="card-actions">
-                  <button type="button" className="button button-outline" disabled={saving} onClick={createCashMovement}>
-                    {cashMovementForm.type === "withdrawal" ? "Registrar retirada" : "Registrar suprimento"}
-                  </button>
-                  <button type="button" className="button button-primary" disabled={saving} onClick={closeCashRegister}>
-                    Fechar caixa
-                  </button>
-                </div>
-                {(cashSession.movements || []).length ? (
-                  <div className="expense-list">
-                    {cashSession.movements.slice().reverse().slice(0, 6).map((movement) => (
-                      <div key={movement.id} className="expense-row">
-                        <div>
-                          <strong>{movement.type}</strong>
-                          <span>{movement.createdAt ? formatDate(movement.createdAt) : "-"}</span>
-                        </div>
-                        <div className="expense-actions">
-                          <strong>{movement.amount < 0 ? "- " : ""}{formatCurrency(Math.abs(Number(movement.amount || 0)))}</strong>
-                          <span>{movement.note || "Sem observacao"}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </article>
-
-          <article className="admin-card">
-            <div className="card-header">
-              <div>
                 <span className="eyebrow">Canais</span>
                 <h2>Delivery vs Balcao</h2>
               </div>
@@ -3317,12 +3436,20 @@ function AdminPage() {
                 <span className="eyebrow">Taxas de entrega</span>
                 <h2>Bairros atendidos</h2>
               </div>
+              <button
+                type="button"
+                className="button button-outline"
+                onClick={addFeeRow}
+              >
+                Adicionar bairro
+              </button>
             </div>
             <div className="fee-list">
               {feeRows.map((row, index) => (
                 <div key={row.id} className="fee-row">
                   <input
                     value={row.name}
+                    disabled={!row.isEditing}
                     onChange={(event) =>
                       setFeeRows((current) =>
                         current.map((entry, entryIndex) =>
@@ -3336,6 +3463,7 @@ function AdminPage() {
                     step="0.01"
                     inputMode="decimal"
                     value={row.value}
+                    disabled={!row.isEditing}
                     onChange={(event) =>
                       setFeeRows((current) =>
                         current.map((entry, entryIndex) =>
@@ -3344,6 +3472,32 @@ function AdminPage() {
                       )
                     }
                   />
+                  <div className="card-actions">
+                    {row.isEditing ? (
+                      <button
+                        type="button"
+                        className="button button-soft"
+                        onClick={() => stopEditingFeeRow(row.id)}
+                      >
+                        Concluir
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="button button-soft"
+                        onClick={() => editFeeRow(row.id)}
+                      >
+                        Editar
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="button button-muted"
+                      onClick={() => removeFeeRow(row.id)}
+                    >
+                      Remover
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

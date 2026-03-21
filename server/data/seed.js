@@ -34,6 +34,7 @@ export const initialData = {
   ],
   paymentMethods: [
     { value: "dinheiro", label: "Dinheiro", active: true },
+    { value: "fiado", label: "Fiado", active: true },
     { value: "pix_key", label: "Chave PIX", active: true },
     { value: "pix_qr", label: "Chave PIX QR Code", active: true },
     { value: "credit_card", label: "Cartao de Credito", active: true },
