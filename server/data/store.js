@@ -414,10 +414,16 @@ const supabase = supabaseEnabled
       db: { schema: process.env.SUPABASE_SCHEMA || "public" }
     })
   : null;
+const strictSupabaseMode =
+  supabaseEnabled && String(process.env.ALLOW_FILE_FALLBACK || "").trim().toLowerCase() !== "true";
 
 const getSupabaseStatus = () => {
   if (supabaseEnabled) {
-    return { enabled: true, mode: "supabase+file-mirror", missing: [] };
+    return {
+      enabled: true,
+      mode: strictSupabaseMode ? "supabase-primary+file-mirror" : "supabase+file-fallback",
+      missing: []
+    };
   }
 
   const missing = [];
@@ -1181,7 +1187,7 @@ export const bootstrapStorage = async () => {
     if (supabaseHasData) {
       const canonicalData = mergeFallbackData(supabaseData, fileData);
       writeDBFile(canonicalData);
-      return { synced: false, mode: "supabase+file-mirror" };
+      return { synced: false, mode: getSupabaseStatus().mode };
     }
 
     const bootstrapData = fileHasData ? fileData : initialData;
@@ -1189,13 +1195,20 @@ export const bootstrapStorage = async () => {
     try {
       await writeDBSupabase(mergedBootstrapData);
     } catch (error) {
+      lastStorageSyncError = error?.message || String(error);
       console.error("[storage-bootstrap-sync-error]", error?.message || error);
+
+      if (strictSupabaseMode) {
+        throw error;
+      }
+
       writeDBFile(mergedBootstrapData);
       return { synced: false, mode: "file-only-fallback" };
     }
 
+    lastStorageSyncError = "";
     writeDBFile(mergedBootstrapData);
-    return { synced: true, mode: "supabase+file-mirror" };
+    return { synced: true, mode: getSupabaseStatus().mode };
   })().catch((error) => {
     bootstrapPromise = null;
     throw error;
@@ -1220,7 +1233,15 @@ export const readDB = async () => {
   const fileData = fileResult.status === "fulfilled" ? fileResult.value : null;
 
   if (supabaseData) {
+    lastStorageSyncError = "";
     return mergeFallbackData(supabaseData, fileData);
+  }
+
+  const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;
+
+  if (strictSupabaseMode) {
+    lastStorageSyncError = supabaseError?.message || "Falha ao carregar dados do Supabase.";
+    throw supabaseError || new Error("Falha ao carregar dados do Supabase.");
   }
 
   const bestData = choosePreferredDatabase(fileData, initialData);
@@ -1228,7 +1249,6 @@ export const readDB = async () => {
     return mergeFallbackData(bestData, initialData);
   }
 
-  const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;
   const fileError = fileResult.status === "rejected" ? fileResult.reason : null;
   throw supabaseError || fileError || new Error("Nao foi possivel carregar o banco.");
 };
@@ -1282,6 +1302,7 @@ export const getDataDir = () => resolvedDataDir;
 export const getStorageMeta = () => ({
   supabaseStatus: getSupabaseStatus().enabled ? "enabled" : "disabled",
   mode: getSupabaseStatus().mode,
+  strictSupabaseMode,
   dataDir: resolvedDataDir,
   dbPath,
   backupDir,

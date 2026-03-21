@@ -299,6 +299,17 @@ const deleteAll = async (table, column, sentinel) => {
   }
 };
 
+const formatMigrationError = (error) => {
+  const message = error?.message || String(error);
+
+  if (message.includes("Could not find the table 'public.")) {
+    const tableName = message.split("Could not find the table 'public.")[1]?.split("'")[0];
+    return `Tabela ausente no Supabase: ${tableName}. Aplique primeiro o arquivo supabase/schema.sql completo no SQL Editor e depois rode a migracao novamente.`;
+  }
+
+  return message;
+};
+
 const migrate = async () => {
   const force = process.env.MIGRATE_FORCE === "true";
   const payload = loadLocalData();
@@ -431,6 +442,6 @@ const migrate = async () => {
 };
 
 migrate().catch((error) => {
-  console.error("Falha na migracao:", error.message || error);
+  console.error("Falha na migracao:", formatMigrationError(error));
   process.exit(1);
 });
