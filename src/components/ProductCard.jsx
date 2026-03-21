@@ -1,12 +1,26 @@
+import { memo, useState } from "react";
 import { Minus, Plus, ShoppingBag } from "lucide-react";
 
-function ProductCard({ product, quantity, onAdd, onIncrease, onDecrease }) {
+function ProductCard({ product, quantity, onAdd, onIncrease, onDecrease, priority = "lazy" }) {
   const displayPrice = Number(product?.price ?? 0);
   const comparePrice = Number(product?.originalPrice ?? displayPrice);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
   return (
     <article className="product-card">
-      <div className="product-art">
-        <img src={product.image} alt={product.name} />
+      <div className={`product-art ${imageLoaded || imageError ? "is-ready" : "is-loading"}`}>
+        <img
+          src={product.image}
+          alt={product.name}
+          loading={priority}
+          decoding="async"
+          fetchPriority={priority === "eager" ? "high" : "low"}
+          width="120"
+          height="120"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageError(true)}
+        />
         {product.badge ? <span className="product-badge">{product.badge}</span> : null}
       </div>
 
@@ -49,4 +63,4 @@ function ProductCard({ product, quantity, onAdd, onIncrease, onDecrease }) {
   );
 }
 
-export default ProductCard;
+export default memo(ProductCard);

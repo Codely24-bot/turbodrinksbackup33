@@ -157,29 +157,18 @@ const createOrderFromSupabase = async (body) => {
 
 export const api = {
   getStore: async () => {
-    const [apiResult, supabaseResult] = await Promise.allSettled([
-      request("/api/store"),
-      getStoreFromSupabase()
-    ]);
-
-    const apiStore = apiResult.status === "fulfilled" ? apiResult.value : null;
-    const supabaseStore = supabaseResult.status === "fulfilled" ? supabaseResult.value : null;
-
-    if (getStoreCatalogScore(supabaseStore) > getStoreCatalogScore(apiStore)) {
-      return withSource(supabaseStore, "supabase");
-    }
-
-    if (apiStore) {
+    try {
+      const apiStore = await request("/api/store");
       return withSource(apiStore, "api");
-    }
+    } catch (apiError) {
+      const supabaseStore = await getStoreFromSupabase();
 
-    if (supabaseStore) {
-      return withSource(supabaseStore, "supabase");
-    }
+      if (supabaseStore) {
+        return withSource(supabaseStore, "supabase");
+      }
 
-    const apiError = apiResult.status === "rejected" ? apiResult.reason : null;
-    const supabaseError = supabaseResult.status === "rejected" ? supabaseResult.reason : null;
-    throw apiError || supabaseError || new Error("Nao foi possivel carregar a loja.");
+      throw apiError || new Error("Nao foi possivel carregar a loja.");
+    }
   },
   getWhatsAppStatus: () => request("/api/whatsapp/status"),
   lookupCustomer: (phone) =>

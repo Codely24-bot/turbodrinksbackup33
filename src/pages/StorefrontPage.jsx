@@ -18,6 +18,7 @@ import CartDrawer from "../components/CartDrawer";
 const CART_KEY = "turbo_cart";
 const CUSTOMER_KEY = "turbo_customer";
 const LAST_ORDER_KEY = "turbo_last_order";
+const STORE_CACHE_KEY = "turbo_store_cache";
 
 const emptyForm = {
   name: "",
@@ -72,6 +73,16 @@ const normalizeStore = (payload) => {
     featuredProducts: (payload.featuredProducts || []).map(normalizeProduct)
   };
 };
+const getCachedStore = () =>
+  normalizeStore(
+    safeParse(localStorage.getItem(STORE_CACHE_KEY), {
+      settings: { deliveryFees: {} },
+      categories: [],
+      featuredProducts: [],
+      promotions: [],
+      products: []
+    })
+  );
 const getWhatsAppLink = (settings) => {
   const phone = settings?.whatsappNumber || "";
   const message = settings?.quickMessage || "Quero fazer um pedido";
@@ -112,14 +123,8 @@ const estimateDeliveryFee = (fees, promotions, neighborhood, subtotal) => {
 
 function StorefrontPage() {
   const navigate = useNavigate();
-  const [store, setStore] = useState({
-    settings: { deliveryFees: {} },
-    categories: [],
-    featuredProducts: [],
-    promotions: [],
-    products: []
-  });
-  const [loading, setLoading] = useState(true);
+  const [store, setStore] = useState(() => getCachedStore());
+  const [loading, setLoading] = useState(() => !getCachedStore().products.length);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [cart, setCart] = useState(() => sanitizeStoredCart(safeParse(localStorage.getItem(CART_KEY), [])));
   const [form, setForm] = useState(() => ({
@@ -138,7 +143,9 @@ function StorefrontPage() {
     const loadStore = async () => {
       try {
         const payload = await api.getStore();
-        setStore(normalizeStore(payload));
+        const normalizedStore = normalizeStore(payload);
+        setStore(normalizedStore);
+        localStorage.setItem(STORE_CACHE_KEY, JSON.stringify(normalizedStore));
       } catch (error) {
         setFeedback(error.message);
       } finally {
@@ -150,7 +157,9 @@ function StorefrontPage() {
 
     const handleCatalogUpdate = (payload) => {
       if (payload?.products) {
-        setStore(normalizeStore(payload));
+        const normalizedStore = normalizeStore(payload);
+        setStore(normalizedStore);
+        localStorage.setItem(STORE_CACHE_KEY, JSON.stringify(normalizedStore));
       } else {
         loadStore();
       }
@@ -534,10 +543,11 @@ function StorefrontPage() {
         </section>
 
         <section className="products-grid">
-          {filteredProducts.map((product) => (
+          {filteredProducts.map((product, index) => (
             <ProductCard
               key={product.id}
               product={product}
+              priority={index < 4 ? "eager" : "lazy"}
               quantity={quantities[product.id] || 0}
               onAdd={() => addProduct(product.id)}
               onIncrease={() => updateQuantity(product.id, (quantities[product.id] || 0) + 1)}
