@@ -10,18 +10,13 @@ import {
   LogOut,
   MapPinned,
   MessageCircle,
-  Minus,
   Package,
   Percent,
-  Plus,
   Wallet,
-  Search,
   RefreshCcw,
   QrCode,
   ShoppingCart,
   Smartphone,
-  TicketPercent,
-  Trash2,
   Users
 } from "lucide-react";
 import { api, socket } from "../api";
@@ -37,7 +32,6 @@ const DEFAULT_CUSTOMER_LIMIT = 50;
 
 const tabs = [
   { key: "orders", label: "Pedidos", icon: ClipboardList },
-  { key: "pos", label: "PDV", icon: ShoppingCart },
   { key: "products", label: "Produtos", icon: Package },
   { key: "promotions", label: "Promocoes", icon: Percent },
   { key: "customers", label: "Clientes", icon: Users },
@@ -46,19 +40,17 @@ const tabs = [
 
 const TAB_RESOURCES = {
   orders: ["orders"],
-  pos: ["products", "promotions"],
   products: ["products"],
   promotions: ["promotions"],
   customers: ["customers"],
-  operations: []
+  operations: ["products"]
 };
 
 const createLoadedResourcesState = () => ({
   orders: false,
   customers: false,
   products: false,
-  promotions: false,
-  reports: false
+  promotions: false
 });
 
 const imageByCategory = {
@@ -162,40 +154,17 @@ const defaultRiderForm = {
   active: true
 };
 
-const defaultPosForm = {
-  name: "",
-  phone: "",
-  note: "",
-  couponCode: "",
-  manualDiscount: "",
-  manualDiscountPercent: "",
-  manualSurcharge: "",
-  manualSurchargePercent: "",
-  creditContactName: "",
-  creditContactPhone: "",
-  creditDueDate: "",
-  creditNote: ""
+const paymentLabels = {
+  fiado: "Fiado",
+  pix_key: "Chave PIX",
+  pix_qr: "Chave PIX QR Code",
+  dinheiro: "Dinheiro",
+  credit_card: "Cartao de Credito",
+  debit_card: "Cartao de Debito",
+  pix: "PIX",
+  cartao: "Cartao",
+  multiple: "Multiplo"
 };
-
-const posPaymentOptions = [
-  { value: "fiado", label: "Fiado" },
-  { value: "pix_key", label: "Chave PIX" },
-  { value: "pix_qr", label: "Chave PIX QR Code" },
-  { value: "dinheiro", label: "Dinheiro" },
-  { value: "credit_card", label: "Cartao de Credito" },
-  { value: "debit_card", label: "Cartao de Debito" }
-];
-const paymentLabels = posPaymentOptions.reduce(
-  (accumulator, option) => ({ ...accumulator, [option.value]: option.label }),
-  { pix: "PIX", cartao: "Cartao", multiple: "Multiplo" }
-);
-
-const createPaymentRow = (overrides = {}) => ({
-  id: `pay-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-  method: "pix_key",
-  amount: "",
-  ...overrides
-});
 
 const createFeeRow = (overrides = {}) => ({
   id: `fee-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
@@ -486,6 +455,29 @@ const getWhatsAppMeta = (status) => {
   };
 };
 
+const getStockLevelMeta = (stock, lowThreshold = 5) => {
+  const units = Number(stock || 0);
+
+  if (units <= 0) {
+    return {
+      label: "Sem estoque",
+      badgeClass: "is-disabled"
+    };
+  }
+
+  if (units <= Number(lowThreshold || 5)) {
+    return {
+      label: "Estoque baixo",
+      badgeClass: "is-pending"
+    };
+  }
+
+  return {
+    label: "Disponivel",
+    badgeClass: "is-online"
+  };
+};
+
 function AdminPage() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [loginForm, setLoginForm] = useState({ username: "admin", password: "123456" });
@@ -499,11 +491,8 @@ function AdminPage() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [promotions, setPromotions] = useState([]);
-  const [reports, setReports] = useState(null);
-  const [reportsLoading, setReportsLoading] = useState(false);
   const [adminProfile, setAdminProfile] = useState(null);
   const [adminConfirmed, setAdminConfirmed] = useState(false);
-  const [reportsDays, setReportsDays] = useState(7);
   const [loadError, setLoadError] = useState("");
   const [productForm, setProductForm] = useState(defaultProductForm);
   const [promotionForm, setPromotionForm] = useState(defaultPromotionForm);
@@ -525,15 +514,6 @@ function AdminPage() {
   const [editingProductId, setEditingProductId] = useState("");
   const [editingPromotionId, setEditingPromotionId] = useState("");
   const [feeRows, setFeeRows] = useState([]);
-  const [posQuery, setPosQuery] = useState("");
-  const [posCategory, setPosCategory] = useState("Todos");
-  const [posCart, setPosCart] = useState([]);
-  const [posForm, setPosForm] = useState(defaultPosForm);
-  const [posPayments, setPosPayments] = useState(() => [createPaymentRow()]);
-  const [posSubmitting, setPosSubmitting] = useState(false);
-  const [posFeedback, setPosFeedback] = useState("");
-  const [posLastOrder, setPosLastOrder] = useState(null);
-  const [posPrintWidth, setPosPrintWidth] = useState("58");
   const [showExpenses, setShowExpenses] = useState(false);
   const [showPayables, setShowPayables] = useState(false);
   const [showReceivables, setShowReceivables] = useState(false);
@@ -547,7 +527,6 @@ function AdminPage() {
   const [visiblePromotionCount, setVisiblePromotionCount] = useState(DEFAULT_PAGE_SIZE);
   const [isRinging, setIsRinging] = useState(false);
   const [loadedResources, setLoadedResources] = useState(createLoadedResourcesState);
-  const posPrintedRef = useRef("");
   const soundEnabledRef = useRef(false);
   const orderSoundRef = useRef(null);
   const previousPendingOrderIdsRef = useRef(null);
@@ -558,7 +537,6 @@ function AdminPage() {
   const customerLimitRef = useRef(customerLimit);
   const productLimitRef = useRef(productLimit);
   const promotionLimitRef = useRef(promotionLimit);
-  const reportsDaysRef = useRef(reportsDays);
 
   const getResourcesForTab = (tab = activeTab) => TAB_RESOURCES[tab] || [];
 
@@ -599,10 +577,6 @@ function AdminPage() {
   useEffect(() => {
     promotionLimitRef.current = promotionLimit;
   }, [promotionLimit]);
-
-  useEffect(() => {
-    reportsDaysRef.current = reportsDays;
-  }, [reportsDays]);
 
   useEffect(() => {
     const audio = new Audio("/audio/ifood-motoboy.mp3");
@@ -651,8 +625,6 @@ function AdminPage() {
     const {
       resources = getResourcesForTab(activeTab),
       includeBase = true,
-      includeReports = activeTab === "operations",
-      reportsPeriodDays = reportsDays,
       orderFetchLimit = orderLimit,
       customerFetchLimit = customerLimit,
       productFetchLimit = productLimit,
@@ -686,10 +658,6 @@ function AdminPage() {
       }
       if (resources.includes("promotions")) {
         requestEntries.push(["promotions", api.getPromotions(currentToken, promotionFetchLimit)]);
-      }
-
-      if (includeReports) {
-        requestEntries.push(["reports", api.getReports(currentToken, reportsPeriodDays)]);
       }
 
       const settled = await Promise.allSettled(requestEntries.map(([, promise]) => promise));
@@ -736,16 +704,12 @@ function AdminPage() {
         setAdminProfile(payloads.profile?.profile || null);
         setAdminConfirmed(Boolean(payloads.profile?.confirmed));
       }
-      if (includeReports && payloads.reports) {
-        setReports(payloads.reports);
-      }
       setLoadedResources((current) => ({
         ...current,
         ...(payloads.orders ? { orders: true } : {}),
         ...(payloads.customers ? { customers: true } : {}),
         ...(payloads.products ? { products: true } : {}),
-        ...(payloads.promotions ? { promotions: true } : {}),
-        ...(includeReports && payloads.reports ? { reports: true } : {})
+        ...(payloads.promotions ? { promotions: true } : {})
       }));
 
       if (failedMessages.length) {
@@ -758,21 +722,6 @@ function AdminPage() {
       if (!silent) {
         setLoading(false);
       }
-    }
-  };
-
-  const loadReports = async (currentToken = token, days = reportsDays) => {
-    if (!currentToken) {
-      return;
-    }
-    try {
-      setReportsLoading(true);
-      const reportsPayload = await api.getReports(currentToken, days);
-      setReports(reportsPayload);
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setReportsLoading(false);
     }
   };
 
@@ -829,8 +778,7 @@ function AdminPage() {
     const boot = async () => {
       try {
         await loadData(token, false, {
-          resources: getResourcesForTab(activeTab),
-          includeReports: activeTab === "operations"
+          resources: getResourcesForTab(activeTab)
         });
         bootstrappedRef.current = true;
       } catch (error) {
@@ -857,8 +805,6 @@ function AdminPage() {
         const currentTab = activeTabRef.current;
         await loadData(token, true, {
           resources: getResourcesForTab(currentTab),
-          includeReports: currentTab === "operations",
-          reportsPeriodDays: reportsDaysRef.current,
           orderFetchLimit: orderLimitRef.current,
           customerFetchLimit: customerLimitRef.current,
           productFetchLimit: productLimitRef.current,
@@ -897,15 +843,13 @@ function AdminPage() {
 
     const resources = getResourcesForTab(activeTab);
     const shouldLoadResources = resources.some((resource) => !loadedResources[resource]);
-    const shouldLoadReports = activeTab === "operations" && !loadedResources.reports;
 
-    if (!shouldLoadResources && !shouldLoadReports) {
+    if (!shouldLoadResources) {
       return;
     }
 
     loadData(token, false, {
-      resources,
-      includeReports: activeTab === "operations"
+      resources
     }).catch((error) => {
       setMessage(error.message);
     });
@@ -927,27 +871,12 @@ function AdminPage() {
     setVisiblePromotionCount(DEFAULT_PAGE_SIZE);
   }, [promotions.length]);
 
-  useEffect(() => {
-    if (!token) {
-      return;
-    }
-    if (activeTab === "operations") {
-      loadReports(token, reportsDays);
-    }
-  }, [reportsDays, activeTab, token]);
-
-  useEffect(() => {
-    if (token && activeTab === "operations" && !reports) {
-      loadReports(token, reportsDays);
-    }
-  }, [activeTab, token, reports, reportsDays]);
-
   const runAction = async (action, successMessage) => {
     setSaving(true);
     setMessage("");
     try {
       await action();
-      await loadData(token, false, { includeReports: activeTab === "operations" });
+      await loadData(token, false);
       setMessage(successMessage);
       return true;
     } catch (error) {
@@ -1110,8 +1039,6 @@ function AdminPage() {
     setCustomers([]);
     setProducts([]);
     setPromotions([]);
-    setReports(null);
-    setReportsLoading(false);
     setAdminProfile(null);
     setAdminConfirmed(false);
     setExpenseForm(defaultExpenseForm);
@@ -1147,25 +1074,9 @@ function AdminPage() {
   const visibleCustomers = customers.slice(0, visibleCustomerCount);
   const visibleProducts = productCatalog.slice(0, visibleProductCount);
   const visiblePromotions = promotionsCatalog.slice(0, visiblePromotionCount);
-  const reportMetrics = reports ?? {
-    weeklyRevenue: 0,
-    monthlyRevenue: 0,
-    weeklyRevenueDelivery: 0,
-    weeklyRevenuePos: 0,
-    monthlyRevenueDelivery: 0,
-    monthlyRevenuePos: 0,
-    avgTicketDelivery: 0,
-    avgTicketPos: 0,
-    salesTodayDelivery: 0,
-    ordersTodayDelivery: 0,
-    salesTodayPos: 0,
-    ordersTodayPos: 0,
-    topProducts: []
-  };
   const categories = dashboard?.categories?.length
     ? dashboard.categories
     : [...new Set(productCatalog.map((product) => product.category))];
-  const paymentOptions = dashboard?.paymentMethods?.filter((method) => method.active) ?? posPaymentOptions;
   const whatsappStatus = dashboard?.whatsapp ?? {};
   const whatsappMeta = getWhatsAppMeta(whatsappStatus);
   const deliveryBoard = orders.filter((order) => order.status === "out_for_delivery");
@@ -1219,6 +1130,16 @@ function AdminPage() {
     const stock = Number(product.stock || 0);
     return stock > 0 && stock <= Number(stockSummary.lowThreshold || 5);
   });
+  const operationsStockProducts = [...productCatalog].sort((left, right) => {
+    const stockDiff = Number(left.stock || 0) - Number(right.stock || 0);
+
+    if (stockDiff !== 0) {
+      return stockDiff;
+    }
+
+    return String(left.name || "").localeCompare(String(right.name || ""), "pt-BR");
+  });
+  const visibleOperationsStockProducts = operationsStockProducts.slice(0, visibleProductCount);
   const overduePayables = payables.filter((entry) => entry.status !== "paid" && isOverdue(entry.dueDate));
   const dueSoonPayables = payables.filter(
     (entry) => entry.status !== "paid" && !isOverdue(entry.dueDate) && isDueSoon(entry.dueDate)
@@ -1304,100 +1225,6 @@ function AdminPage() {
       previousPendingOrderIdsRef.current = pendingIds;
     };
   }, [soundEnabled, pendingDeliveryOrders]);
-  const productsById = productCatalog.reduce((accumulator, product) => {
-    accumulator[product.id] = product;
-    return accumulator;
-  }, {});
-  const posQuantities = posCart.reduce(
-    (accumulator, item) => ({ ...accumulator, [item.id]: item.quantity }),
-    {}
-  );
-  const posCartItems = posCart
-    .map((item) => {
-      const product = productsById[item.id];
-      return product ? { ...product, quantity: item.quantity } : null;
-    })
-    .filter(Boolean);
-  const posSubtotal = posCartItems.reduce(
-    (sum, item) => sum + item.salePrice * item.quantity,
-    0
-  );
-  const posPromoDiscount = estimateDiscount(
-    posSubtotal,
-    promotionsCatalog,
-    posForm.couponCode
-  );
-  const posDiscountBase = Math.max(posSubtotal - posPromoDiscount, 0);
-  const posManualDiscount = Math.max(parseAmount(posForm.manualDiscount), 0);
-  const posManualDiscountPercent = clampPercent(posForm.manualDiscountPercent);
-  const posManualDiscountPercentAmount = Number(
-    ((posDiscountBase * posManualDiscountPercent) / 100).toFixed(2)
-  );
-  const posManualDiscountFixedApplied = Math.min(posManualDiscount, posDiscountBase);
-  const posManualDiscountPercentApplied = Math.min(
-    posManualDiscountPercentAmount,
-    Math.max(posDiscountBase - posManualDiscountFixedApplied, 0)
-  );
-  const posManualDiscountApplied = posManualDiscountFixedApplied + posManualDiscountPercentApplied;
-  const posDiscountTotal = Math.min(posPromoDiscount + posManualDiscountApplied, posSubtotal);
-  const posSurchargeBase = Math.max(posSubtotal - posDiscountTotal, 0);
-  const posManualSurcharge = Math.max(parseAmount(posForm.manualSurcharge), 0);
-  const posManualSurchargePercent = clampPercent(posForm.manualSurchargePercent);
-  const posManualSurchargePercentAmount = Number(
-    ((posSurchargeBase * posManualSurchargePercent) / 100).toFixed(2)
-  );
-  const posManualSurchargeTotal = posManualSurcharge + posManualSurchargePercentAmount;
-  const posTotal = Math.max(posSubtotal - posDiscountTotal + posManualSurchargeTotal, 0);
-  const posPaymentsTotalCents = posPayments.reduce(
-    (sum, payment) => sum + toCents(payment.amount),
-    0
-  );
-  const posCreditTotalCents = posPayments.reduce(
-    (sum, payment) => (payment.method === "fiado" ? sum + toCents(payment.amount) : sum),
-    0
-  );
-  const posCashTotalCents = posPayments.reduce(
-    (sum, payment) => (payment.method === "dinheiro" ? sum + toCents(payment.amount) : sum),
-    0
-  );
-  const posTotalCents = toCents(posTotal);
-  const posOverpaymentCents = Math.max(posPaymentsTotalCents - posTotalCents, 0);
-  const posRemainingCents = Math.max(posTotalCents - posPaymentsTotalCents, 0);
-  const posPaymentsTotal = fromCents(posPaymentsTotalCents);
-  const posCreditTotal = fromCents(posCreditTotalCents);
-  const posOverpayment = fromCents(posOverpaymentCents);
-  const posRemaining = fromCents(posRemainingCents);
-  const posInvalidChange = posOverpaymentCents > 0 && posCashTotalCents < posOverpaymentCents;
-  const posUsesCredit = posCreditTotalCents > 0;
-  const posCreditDetailsReady = Boolean(
-    posForm.creditContactName.trim() &&
-      posForm.creditContactPhone.trim() &&
-      posForm.creditDueDate
-  );
-  const posCanSubmit =
-    posCartItems.length > 0 &&
-    posPaymentsTotalCents >= posTotalCents &&
-    !posInvalidChange &&
-    (!posUsesCredit || posCreditDetailsReady);
-  const posFilteredProducts = productCatalog
-    .filter((product) => product.active && product.stock > 0)
-    .filter((product) => (posCategory === "Todos" ? true : product.category === posCategory))
-    .filter((product) =>
-      posQuery
-        ? `${product.name} ${product.category} ${product.volume}`
-            .toLowerCase()
-            .includes(posQuery.toLowerCase())
-        : true
-    );
-  const effectiveReportsDays = reports?.periodDays || reportsDays;
-  const reportsDailyDelivery = reports?.dailySalesDelivery || [];
-  const reportsDailyPos = reports?.dailySalesPos || [];
-  const reportsDailyMax = Math.max(
-    1,
-    ...reportsDailyDelivery.map((entry) => Number(entry.value || 0)),
-    ...reportsDailyPos.map((entry) => Number(entry.value || 0))
-  );
-
   if (!token) {
     return (
       <div className="page-shell centered admin-login">
@@ -2070,32 +1897,6 @@ function AdminPage() {
     setMessage("Imagem padrao da categoria restaurada.");
   };
 
-  const updatePosQuantity = (productId, nextQuantity) => {
-    if (nextQuantity <= 0) {
-      setPosCart((current) => current.filter((item) => item.id !== productId));
-      return;
-    }
-
-    const product = productsById[productId];
-    if (product && nextQuantity > product.stock) {
-      setPosFeedback("Estoque insuficiente para esta quantidade.");
-      return;
-    }
-
-    setPosCart((current) => {
-      const existing = current.find((item) => item.id === productId);
-      if (!existing) {
-        return [...current, { id: productId, quantity: nextQuantity }];
-      }
-      return current.map((item) => (item.id === productId ? { ...item, quantity: nextQuantity } : item));
-    });
-  };
-
-  const clearPosCart = () => {
-    setPosCart([]);
-    setPosFeedback("");
-  };
-
   const handleBrowserPrint = (order) => {
     if (!order) {
       return;
@@ -2104,98 +1905,18 @@ function AdminPage() {
     const receiptHtml = buildReceiptHtml({
       order,
       settings: dashboard?.settings || {},
-      width: posPrintWidth
+      width: 58
     });
     const printWindow = window.open("", "_blank", "width=420,height=640");
 
     if (!printWindow) {
-      setPosFeedback("Popup bloqueado. Permita o popup para imprimir.");
+      setMessage("Popup bloqueado. Permita o popup para imprimir.");
       return;
     }
 
     printWindow.document.open();
     printWindow.document.write(receiptHtml);
     printWindow.document.close();
-  };
-
-  const handlePosSubmit = async () => {
-    if (!posCartItems.length) {
-      setPosFeedback("Carrinho vazio. Adicione itens para registrar a venda.");
-      return;
-    }
-
-    const paymentsPayload = posPayments
-      .map((payment) => ({
-        method: payment.method,
-        amount: parseAmount(payment.amount)
-      }))
-      .filter((payment) => payment.amount > 0);
-
-    if (!paymentsPayload.length) {
-      setPosFeedback("Informe ao menos uma forma de pagamento.");
-      return;
-    }
-
-    if (posPaymentsTotalCents < posTotalCents) {
-      const missing = fromCents(posTotalCents - posPaymentsTotalCents);
-      setPosFeedback(`Falta pagar ${formatCurrency(missing)}.`);
-      return;
-    }
-
-    if (posInvalidChange) {
-      setPosFeedback("Troco maior que dinheiro informado.");
-      return;
-    }
-
-    if (posUsesCredit && !posCreditDetailsReady) {
-      setPosFeedback("Preencha nome, telefone e vencimento do fiado.");
-      return;
-    }
-
-    setPosSubmitting(true);
-    setPosFeedback("");
-
-    try {
-      const paymentMethod =
-        paymentsPayload.length === 1 ? paymentsPayload[0].method : "multiple";
-      const payload = await api.createPosOrder(token, {
-        name: posForm.name,
-        phone: posForm.phone,
-        paymentMethod,
-        payments: paymentsPayload,
-        note: posForm.note,
-        couponCode: posForm.couponCode,
-        manualDiscount: parseAmount(posForm.manualDiscount),
-        manualDiscountPercent: clampPercent(posForm.manualDiscountPercent),
-        manualSurcharge: parseAmount(posForm.manualSurcharge),
-        manualSurchargePercent: clampPercent(posForm.manualSurchargePercent),
-        creditContactName: posForm.creditContactName,
-        creditContactPhone: posForm.creditContactPhone,
-        creditDueDate: posForm.creditDueDate,
-        creditNote: posForm.creditNote,
-        items: posCartItems.map((item) => ({
-          productId: item.id,
-          quantity: item.quantity
-        }))
-      });
-
-      setPosLastOrder(payload.order);
-      setPosCart([]);
-      setPosForm(defaultPosForm);
-      setPosPayments([createPaymentRow()]);
-      await loadData(token, true);
-      if (payload.order?.id && posPrintedRef.current !== payload.order.id) {
-        posPrintedRef.current = payload.order.id;
-        handleBrowserPrint(payload.order);
-      }
-      setPosFeedback(
-        [`Venda PDV registrada: #${payload.order.number}.`].filter(Boolean).join(" ")
-      );
-    } catch (error) {
-      setPosFeedback(error.message);
-    } finally {
-      setPosSubmitting(false);
-    }
   };
 
   return (
@@ -2253,6 +1974,9 @@ function AdminPage() {
           <button type="button" className="button button-outline" onClick={() => playOrderSound(true)}>
             Testar som
           </button>
+          <a href="/pdv/" className="button button-outline">
+            Abrir PDV
+          </a>
           <Link to="/" className="button button-outline">
             Ver loja
           </Link>
@@ -2348,7 +2072,7 @@ function AdminPage() {
               <div key={entry.id} className="support-request-row">
                 <div>
                   <strong>{entry.customerName || "Cliente do WhatsApp"}</strong>
-                  <span>{entry.phone || "Sem telefone"} • {entry.requestedAt ? formatDate(entry.requestedAt) : "-"}</span>
+                  <span>{entry.phone || "Sem telefone"} - {entry.requestedAt ? formatDate(entry.requestedAt) : "-"}</span>
                 </div>
                 <div className="card-actions">
                   <span className="status-pill is-pending">Prioridade</span>
@@ -2410,7 +2134,7 @@ function AdminPage() {
                       order.changeDue > 0 ? `Troco ${formatCurrency(order.changeDue)}` : ""
                     ]
                       .filter(Boolean)
-                      .join(" • ")}
+                      .join(" - ")}
                   </small>
                   <button
                     type="button"
@@ -2488,590 +2212,6 @@ function AdminPage() {
               Carregar mais pedidos
             </button>
           ) : null}
-        </section>
-      ) : null}
-
-      {activeTab === "pos" ? (
-        <section className="admin-grid pos-grid">
-          <article className="admin-card">
-            <div className="card-header">
-              <div>
-                <span className="eyebrow">Caixa PDV</span>
-                <h2>Abertura, suprimento e fechamento</h2>
-              </div>
-              <span className={`status-pill ${cashSession ? "is-online" : "is-disabled"}`}>
-                {cashSession ? "Caixa aberto" : "Caixa fechado"}
-              </span>
-            </div>
-            <div className="summary-list">
-              <div><span>Status</span><strong>{cashSession ? "Aberto" : "Fechado"}</strong></div>
-              <div><span>Saldo esperado</span><strong>{formatCurrency(cashSession?.expectedBalance || 0)}</strong></div>
-              <div><span>Abertura</span><strong>{cashSession?.openedAt ? formatDate(cashSession.openedAt) : "-"}</strong></div>
-              <div><span>Fechamentos salvos</span><strong>{cashHistory.length}</strong></div>
-            </div>
-            {!cashSession ? (
-              <div className="expense-form">
-                <div className="field-grid">
-                  <label>
-                    Valor de abertura
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashOpenForm.openingBalance}
-                      onChange={(event) =>
-                        setCashOpenForm((current) => ({ ...current, openingBalance: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label>
-                    Observacao
-                    <input
-                      value={cashOpenForm.note}
-                      onChange={(event) =>
-                        setCashOpenForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Turno da tarde, abertura da loja..."
-                    />
-                  </label>
-                </div>
-                <button type="button" className="button button-primary" disabled={saving} onClick={openCashRegister}>
-                  <Wallet size={16} />
-                  Abrir caixa
-                </button>
-              </div>
-            ) : (
-              <div className="expense-form">
-                <div className="field-grid">
-                  <label>
-                    Movimento
-                    <select
-                      value={cashMovementForm.type}
-                      onChange={(event) =>
-                        setCashMovementForm((current) => ({ ...current, type: event.target.value }))
-                      }
-                    >
-                      <option value="withdrawal">Retirada de caixa</option>
-                      <option value="supply">Suprimento de caixa</option>
-                    </select>
-                  </label>
-                  <label>
-                    Valor
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashMovementForm.amount}
-                      onChange={(event) =>
-                        setCashMovementForm((current) => ({ ...current, amount: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label className="field-span">
-                    Observacao
-                    <input
-                      value={cashMovementForm.note}
-                      onChange={(event) =>
-                        setCashMovementForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Motivo do movimento"
-                    />
-                  </label>
-                  <label>
-                    Saldo contado
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashCloseForm.countedBalance}
-                      onChange={(event) =>
-                        setCashCloseForm((current) => ({ ...current, countedBalance: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label>
-                    Fechamento
-                    <input
-                      value={cashCloseForm.note}
-                      onChange={(event) =>
-                        setCashCloseForm((current) => ({ ...current, note: event.target.value }))
-                      }
-                      placeholder="Observacoes do fechamento"
-                    />
-                  </label>
-                </div>
-                <div className="card-actions">
-                  <button type="button" className="button button-outline" disabled={saving} onClick={createCashMovement}>
-                    {cashMovementForm.type === "withdrawal" ? "Registrar retirada" : "Registrar suprimento"}
-                  </button>
-                  <button type="button" className="button button-primary" disabled={saving} onClick={closeCashRegister}>
-                    Fechar caixa
-                  </button>
-                </div>
-                {(cashSession.movements || []).length ? (
-                  <div className="expense-list">
-                    {cashSession.movements.slice().reverse().slice(0, 6).map((movement) => (
-                      <div key={movement.id} className="expense-row">
-                        <div>
-                          <strong>{movement.type}</strong>
-                          <span>{movement.createdAt ? formatDate(movement.createdAt) : "-"}</span>
-                        </div>
-                        <div className="expense-actions">
-                          <strong>{movement.amount < 0 ? "- " : ""}{formatCurrency(Math.abs(Number(movement.amount || 0)))}</strong>
-                          <span>{movement.note || "Sem observacao"}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </article>
-
-          <article className="admin-card pos-products">
-            <div className="card-header">
-              <div>
-                <span className="eyebrow">PDV presencial</span>
-                <h2>Registrar venda no balcao</h2>
-              </div>
-              <button
-                type="button"
-                className="button button-outline"
-                onClick={() => {
-                  setPosQuery("");
-                  setPosCategory("Todos");
-                }}
-              >
-                Limpar filtros
-              </button>
-            </div>
-            <div className="pos-filters">
-              <div className="pos-search">
-                <Search size={16} />
-                <input
-                  value={posQuery}
-                  onChange={(event) => setPosQuery(event.target.value)}
-                  placeholder="Buscar por nome, categoria ou volume"
-                />
-              </div>
-              <select value={posCategory} onChange={(event) => setPosCategory(event.target.value)}>
-                <option value="Todos">Todas as categorias</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="pos-product-list">
-              {posFilteredProducts.length ? (
-                posFilteredProducts.map((product) => {
-                  const quantity = posQuantities[product.id] || 0;
-                  return (
-                    <div key={product.id} className="pos-product-row">
-                      <img src={product.image} alt={product.name} />
-                      <div className="pos-product-info">
-                        <strong>{product.name}</strong>
-                        <span>{product.category} • {product.volume}</span>
-                        <small>Estoque: {product.stock} un.</small>
-                      </div>
-                      <div className="pos-product-actions">
-                        {quantity > 0 ? (
-                          <div className="stepper">
-                            <button type="button" onClick={() => updatePosQuantity(product.id, quantity - 1)}>
-                              <Minus size={14} />
-                            </button>
-                            <span>{quantity}</span>
-                            <button type="button" onClick={() => updatePosQuantity(product.id, quantity + 1)}>
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button type="button" className="button button-primary" onClick={() => updatePosQuantity(product.id, 1)}>
-                            <ShoppingCart size={16} />
-                            Adicionar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="empty-state compact">
-                  <h3>Nenhum produto encontrado</h3>
-                  <p>Verifique os filtros ou cadastre novos itens no estoque.</p>
-                </div>
-              )}
-            </div>
-          </article>
-
-          <article className="admin-card pos-cart">
-            <div className="card-header">
-              <div>
-                <span className="eyebrow">Carrinho PDV</span>
-                <h2>Resumo da venda</h2>
-                {posLastOrder ? <p>Ultima venda registrada: #{posLastOrder.number}</p> : null}
-              </div>
-              <button type="button" className="button button-muted" onClick={clearPosCart} disabled={!posCartItems.length}>
-                Limpar carrinho
-              </button>
-            </div>
-
-            <div className="pos-cart-items">
-              {posCartItems.length ? (
-                posCartItems.map((item) => (
-                  <div key={item.id} className="pos-cart-item">
-                    <img src={item.image} alt={item.name} />
-                    <div className="pos-cart-item-info">
-                      <strong>{item.name}</strong>
-                      <span>{item.quantity}x {formatCurrency(item.salePrice)}</span>
-                      <small>{formatCurrency(item.salePrice * item.quantity)}</small>
-                    </div>
-                    <div className="pos-cart-item-actions">
-                      <div className="stepper">
-                        <button type="button" onClick={() => updatePosQuantity(item.id, item.quantity - 1)}>
-                          <Minus size={14} />
-                        </button>
-                        <span>{item.quantity}</span>
-                        <button type="button" onClick={() => updatePosQuantity(item.id, item.quantity + 1)}>
-                          <Plus size={14} />
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        className="icon-button danger"
-                        onClick={() => updatePosQuantity(item.id, 0)}
-                        aria-label={`Excluir ${item.name}`}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="empty-state compact">
-                  <h3>Carrinho vazio</h3>
-                  <p>Adicione os itens ao lado para montar a venda.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="pos-cart-form">
-              <div className="field-grid">
-                <label>
-                  Cliente
-                  <input
-                    value={posForm.name}
-                    onChange={(event) => setPosForm((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Cliente balcao"
-                  />
-                </label>
-                <label>
-                  Telefone (opcional)
-                  <input
-                    value={posForm.phone}
-                    onChange={(event) => setPosForm((current) => ({ ...current, phone: event.target.value }))}
-                    placeholder="(11) 99999-9999"
-                  />
-                </label>
-                <label>
-                  Largura da impressao
-                  <select value={posPrintWidth} onChange={(event) => setPosPrintWidth(event.target.value)}>
-                    <option value="58">58mm</option>
-                    <option value="80">80mm</option>
-                  </select>
-                </label>
-                <label>
-                  Cupom
-                  <div className="input-with-icon">
-                    <TicketPercent size={16} />
-                    <input
-                      value={posForm.couponCode}
-                      onChange={(event) => setPosForm((current) => ({ ...current, couponCode: event.target.value.toUpperCase() }))}
-                      placeholder="CHEGUEI"
-                    />
-                  </div>
-                </label>
-                <label>
-                  Desconto manual (R$)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={posForm.manualDiscount}
-                    onChange={(event) => setPosForm((current) => ({ ...current, manualDiscount: event.target.value }))}
-                    placeholder="0,00"
-                  />
-                </label>
-                <label>
-                  Desconto manual (%)
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={posForm.manualDiscountPercent}
-                    onChange={(event) => setPosForm((current) => ({ ...current, manualDiscountPercent: event.target.value }))}
-                    placeholder="0"
-                  />
-                </label>
-                <label>
-                  Acrescimo manual (R$)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={posForm.manualSurcharge}
-                    onChange={(event) => setPosForm((current) => ({ ...current, manualSurcharge: event.target.value }))}
-                    placeholder="0,00"
-                  />
-                </label>
-                <label>
-                  Acrescimo manual (%)
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={posForm.manualSurchargePercent}
-                    onChange={(event) => setPosForm((current) => ({ ...current, manualSurchargePercent: event.target.value }))}
-                    placeholder="0"
-                  />
-                </label>
-              </div>
-
-              <div className="pos-payments">
-                <div className="pos-payments-head">
-                  <strong>Pagamentos</strong>
-                  <div className="pos-payments-actions">
-                    <button
-                      type="button"
-                      className="button button-soft"
-                      onClick={() => {
-                        if (!posPayments.length) {
-                          return;
-                        }
-
-                        const totalCents = posTotalCents;
-                        const count = posPayments.length;
-                        const base = Math.floor(totalCents / count);
-                        const remainder = totalCents - base * count;
-
-                        setPosPayments((current) =>
-                          current.map((entry, index) => ({
-                            ...entry,
-                            amount: ((base + (index < remainder ? 1 : 0)) / 100).toFixed(2)
-                          }))
-                        );
-                      }}
-                    >
-                      Dividir igualmente
-                    </button>
-                    <button
-                      type="button"
-                      className="button button-outline"
-                      onClick={() => setPosPayments((current) => [...current, createPaymentRow()])}
-                    >
-                      Adicionar forma
-                    </button>
-                  </div>
-                </div>
-                {posPayments.map((payment) => (
-                  <div className="pos-payment-row" key={payment.id}>
-                    <select
-                      value={payment.method}
-                      onChange={(event) => {
-                        const method = event.target.value;
-                        setPosPayments((current) =>
-                          current.map((entry) =>
-                            entry.id === payment.id ? { ...entry, method } : entry
-                          )
-                        );
-                      }}
-                    >
-                      {paymentOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={payment.amount}
-                      onChange={(event) => {
-                        const amount = event.target.value;
-                        setPosPayments((current) =>
-                          current.map((entry) =>
-                            entry.id === payment.id ? { ...entry, amount } : entry
-                          )
-                        );
-                      }}
-                      placeholder="0,00"
-                    />
-                    {posPayments.length > 1 ? (
-                      <button
-                        type="button"
-                        className="button button-muted"
-                        onClick={() =>
-                          setPosPayments((current) =>
-                            current.filter((entry) => entry.id !== payment.id)
-                          )
-                        }
-                      >
-                        Remover
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-
-              <label>
-                Observacoes da venda
-                <textarea
-                  rows="3"
-                  value={posForm.note}
-                  onChange={(event) => setPosForm((current) => ({ ...current, note: event.target.value }))}
-                  placeholder="Informacoes internas, forma de retirada, etc."
-                />
-              </label>
-
-              {posUsesCredit ? (
-                <div className="form-grid">
-                  <label>
-                    Nome do fiado
-                    <input
-                      value={posForm.creditContactName}
-                      onChange={(event) =>
-                        setPosForm((current) => ({
-                          ...current,
-                          creditContactName: event.target.value
-                        }))
-                      }
-                      placeholder="Quem esta levando no fiado"
-                    />
-                  </label>
-                  <label>
-                    Telefone do fiado
-                    <input
-                      value={posForm.creditContactPhone}
-                      onChange={(event) =>
-                        setPosForm((current) => ({
-                          ...current,
-                          creditContactPhone: event.target.value
-                        }))
-                      }
-                      placeholder="(00) 00000-0000"
-                    />
-                  </label>
-                  <label>
-                    Vencimento do fiado
-                    <input
-                      type="date"
-                      value={posForm.creditDueDate}
-                      onChange={(event) =>
-                        setPosForm((current) => ({
-                          ...current,
-                          creditDueDate: event.target.value
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field-span">
-                    Observacao do fiado
-                    <textarea
-                      rows="2"
-                      value={posForm.creditNote}
-                      onChange={(event) =>
-                        setPosForm((current) => ({
-                          ...current,
-                          creditNote: event.target.value
-                        }))
-                      }
-                      placeholder="Referencia, combinado de pagamento, etc."
-                    />
-                  </label>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="pos-cart-footer">
-              <div className="pos-total-line">
-                <span>Subtotal</span>
-                <strong>{formatCurrency(posSubtotal)}</strong>
-              </div>
-              {posPromoDiscount > 0 ? (
-                <div className="pos-total-line success">
-                  <span>Desconto cupom</span>
-                  <strong>- {formatCurrency(posPromoDiscount)}</strong>
-                </div>
-              ) : null}
-              {posManualDiscountPercentApplied > 0 ? (
-                <div className="pos-total-line success">
-                  <span>Desconto % ({posManualDiscountPercent.toFixed(2)}%)</span>
-                  <strong>- {formatCurrency(posManualDiscountPercentApplied)}</strong>
-                </div>
-              ) : null}
-              {posManualDiscountFixedApplied > 0 ? (
-                <div className="pos-total-line success">
-                  <span>Desconto manual</span>
-                  <strong>- {formatCurrency(posManualDiscountFixedApplied)}</strong>
-                </div>
-              ) : null}
-              {posManualSurchargePercentAmount > 0 ? (
-                <div className="pos-total-line">
-                  <span>Acrescimo % ({posManualSurchargePercent.toFixed(2)}%)</span>
-                  <strong>{formatCurrency(posManualSurchargePercentAmount)}</strong>
-                </div>
-              ) : null}
-              {posManualSurcharge > 0 ? (
-                <div className="pos-total-line">
-                  <span>Acrescimo</span>
-                  <strong>{formatCurrency(posManualSurcharge)}</strong>
-                </div>
-              ) : null}
-              <div className="pos-total-line">
-                <span>Pago</span>
-                <strong>{formatCurrency(posPaymentsTotal)}</strong>
-              </div>
-              {posUsesCredit ? (
-                <div className="pos-total-line">
-                  <span>Lancado em fiado</span>
-                  <strong>{formatCurrency(posCreditTotal)}</strong>
-                </div>
-              ) : null}
-              {posRemaining > 0 ? (
-                <div className="pos-total-line">
-                  <span>Falta pagar</span>
-                  <strong>{formatCurrency(posRemaining)}</strong>
-                </div>
-              ) : null}
-              {posOverpayment > 0 ? (
-                <div className={`pos-total-line ${posInvalidChange ? "has-error" : "success"}`}>
-                  <span>Troco</span>
-                  <strong>{formatCurrency(posOverpayment)}</strong>
-                </div>
-              ) : null}
-              <div className="pos-total-line grand">
-                <span>Total</span>
-                <strong>{formatCurrency(posTotal)}</strong>
-              </div>
-              <button
-                type="button"
-                className="button button-primary button-block"
-                onClick={handlePosSubmit}
-                disabled={posSubmitting || !posCanSubmit}
-              >
-                {posSubmitting ? "Registrando venda..." : "Finalizar venda PDV"}
-              </button>
-              {posFeedback ? <div className="toast-inline">{posFeedback}</div> : null}
-            </div>
-          </article>
         </section>
       ) : null}
 
@@ -3376,6 +2516,126 @@ function AdminPage() {
       ) : null}
 
       {activeTab === "operations" ? (
+        <section className="admin-section">
+          <div className="admin-grid">
+            <article className="admin-card">
+              <div className="card-header">
+                <div>
+                  <span className="eyebrow">Estoque</span>
+                  <h2>Saude do estoque</h2>
+                </div>
+                <span className="status-pill">Minimo {stockSummary.lowThreshold} un.</span>
+              </div>
+              <div className="summary-list">
+                <div><span>Produtos cadastrados</span><strong>{stockSummary.totalProducts}</strong></div>
+                <div><span>Quantidade total</span><strong>{stockSummary.totalUnits}</strong></div>
+                <div><span>Estoque zerado</span><strong>{stockSummary.zeroStockCount}</strong></div>
+                <div><span>Estoque baixo</span><strong>{stockSummary.lowStockCount}</strong></div>
+                <div><span>Valor em estoque</span><strong>{formatCurrency(stockSummary.inventoryValue)}</strong></div>
+              </div>
+            </article>
+
+            <article className="admin-card">
+              <div className="card-header">
+                <div>
+                  <span className="eyebrow">Estoque</span>
+                  <h2>Alertas de reposicao</h2>
+                </div>
+                <span className="status-pill is-online">{productCatalog.length} itens</span>
+              </div>
+              {zeroStockProducts.length || lowStockProducts.length ? (
+                <div className="alert-stack">
+                  {zeroStockProducts.length ? (
+                    <div className="promo-note warning-note">
+                      <AlertTriangle size={18} />
+                      <p>
+                        {zeroStockProducts.length} produto(s) com estoque zerado:
+                        {" "}
+                        {zeroStockProducts.slice(0, 4).map((product) => product.name).join(", ")}
+                        {zeroStockProducts.length > 4 ? "..." : ""}
+                      </p>
+                    </div>
+                  ) : null}
+                  {lowStockProducts.length ? (
+                    <div className="promo-note warning-note soft">
+                      <Package size={18} />
+                      <p>
+                        {lowStockProducts.length} produto(s) com estoque baixo:
+                        {" "}
+                        {lowStockProducts.slice(0, 4).map((product) => `${product.name} (${product.stock})`).join(", ")}
+                        {lowStockProducts.length > 4 ? "..." : ""}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="promo-note success-note">
+                  <Package size={18} />
+                  <p>Estoque sob controle no momento, sem itens zerados ou abaixo do limite minimo.</p>
+                </div>
+              )}
+            </article>
+          </div>
+
+          <div className="list-column">
+            <article className="admin-card">
+              <div className="card-header">
+                <div>
+                  <span className="eyebrow">Estoque</span>
+                  <h2>Estoque disponivel</h2>
+                </div>
+                <span className="status-pill">{operationsStockProducts.length} produtos</span>
+              </div>
+              <p>Lista ordenada do menor para o maior estoque para facilitar a conferencia.</p>
+            </article>
+
+            {visibleOperationsStockProducts.length ? (
+              visibleOperationsStockProducts.map((product) => {
+                const stockMeta = getStockLevelMeta(product.stock, stockSummary.lowThreshold);
+                const productImage = product.image || imageByCategory[product.category] || "/products/beer.svg";
+
+                return (
+                  <article key={product.id} className="admin-card product-admin-card">
+                    <img src={productImage} alt={product.name} />
+                    <div>
+                      <div className="card-header">
+                        <div>
+                          <span className="eyebrow">{product.category || "Sem categoria"}</span>
+                          <strong>{product.name}</strong>
+                        </div>
+                        <span className={`status-pill ${stockMeta.badgeClass}`}>{stockMeta.label}</span>
+                      </div>
+                      <small>
+                        {product.volume ? `${product.volume} - ` : ""}
+                        venda {formatCurrency(product.salePrice)} - estoque {Number(product.stock || 0)} un.
+                        {!product.active ? " - produto pausado" : ""}
+                      </small>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <article className="admin-card">
+                <span className="eyebrow">Estoque</span>
+                <h2>Nenhum produto cadastrado</h2>
+                <p>Cadastre produtos na aba Produtos para acompanhar o estoque aqui.</p>
+              </article>
+            )}
+
+            {visibleProductCount < operationsStockProducts.length || productCatalog.length >= productLimit ? (
+              <button
+                type="button"
+                className="button button-outline button-block"
+                onClick={loadMoreProducts}
+              >
+                Carregar mais produtos
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {false && activeTab === "operations" ? (
         <section className="admin-grid reports-grid">
           {reportsLoading || !reports ? (
             <article className="admin-card">
@@ -3742,7 +3002,7 @@ function AdminPage() {
                             .map((value) =>
                               String(value).includes("T") ? formatDate(value) : value
                             )
-                            .join(" • ") || "Sem detalhes"}
+                            .join(" - ") || "Sem detalhes"}
                         </span>
                       </div>
                       <div className="expense-actions">
@@ -3914,7 +3174,7 @@ function AdminPage() {
                         <span>
                           {[entry.category, entry.dueDate ? formatDate(entry.dueDate) : "", entry.status === "paid" ? "Pago" : "Pendente"]
                             .filter(Boolean)
-                            .join(" • ")}
+                            .join(" - ")}
                         </span>
                       </div>
                       <div className="expense-actions">
@@ -4099,7 +3359,7 @@ function AdminPage() {
                         <span>
                           {[entry.title, entry.customerPhone, entry.dueDate ? formatDate(entry.dueDate) : "", entry.status === "paid" ? "Recebido" : "Pendente"]
                             .filter(Boolean)
-                            .join(" • ")}
+                            .join(" - ")}
                         </span>
                       </div>
                       <div className="expense-actions">
@@ -4264,7 +3524,7 @@ function AdminPage() {
                     <div>
                       <strong>{entry.rider.name}</strong>
                       <span>
-                        {entry.rider.phone || "Sem telefone"} • {entry.rider.active ? "Ativo" : "Inativo"}
+                        {entry.rider.phone || "Sem telefone"} - {entry.rider.active ? "Ativo" : "Inativo"}
                       </span>
                     </div>
                     <div className="rider-metrics">
@@ -4365,3 +3625,4 @@ function AdminPage() {
 }
 
 export default AdminPage;
+

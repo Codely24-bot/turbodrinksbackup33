@@ -221,6 +221,10 @@ export const api = {
     request("/api/admin/dashboard", {
       headers: { Authorization: `Bearer ${token}` }
     }),
+  getPosBootstrap: (token) =>
+    request("/api/admin/pos/bootstrap", {
+      headers: { Authorization: `Bearer ${token}` }
+    }),
   getOrders: (token, limit) =>
     request(`/api/admin/orders${limit ? `?limit=${limit}` : ""}`, {
       headers: { Authorization: `Bearer ${token}` }

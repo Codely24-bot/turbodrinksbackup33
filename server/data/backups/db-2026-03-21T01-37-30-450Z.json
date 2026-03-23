@@ -1,0 +1,113 @@
+{
+  "settings": {
+    "storeName": "Fortin Delivery",
+    "tagline": "Geladas em minutos, do jeito que a quebrada gosta.",
+    "bannerTitle": "Delivery de bebidas com pedido turbo e rastreio ao vivo",
+    "bannerSubtitle": "Monte seu combo, escolha a forma de pagamento e acompanhe cada status pelo celular.",
+    "addressLine": "Rua Jose Pedro de Brito, 407",
+    "city": "Vila Santa Rita - Belo Horizonte",
+    "mapsUrl": "https://maps.app.goo.gl/3PtSGsGTevirUPYKA",
+    "openingHoursText": "*Horario de funcionamento*\n\nTerca e Quarta: 10:00 as 22:00\nSexta: 10:00 as 23:59\nSabado: 10:00 as 23:59\nDomingo: 10:00 as 23:59\n\nEstamos esperando seu pedido!",
+    "whatsappNumber": "5511999999999",
+    "quickMessage": "Quero fazer um pedido rapido na Fortin Delivery",
+    "supportText": "Atendimento ate 02h com foco em entregas expressas.",
+    "deliveryFees": {
+      "Centro": 5,
+      "Jardim America": 7,
+      "Vila Nova": 6,
+      "Industrial": 8,
+      "Universitario": 4,
+      "Parque das Flores": 9
+    },
+    "stockLowThreshold": 5,
+    "createdAt": "2026-03-16T03:58:30.403651+00:00",
+    "updatedAt": "2026-03-16T03:58:30.403651+00:00"
+  },
+  "categories": [
+    "Cervejas",
+    "Refrigerantes",
+    "Energeticos",
+    "Aguas",
+    "Sucos",
+    "Destilados",
+    "Combos e promocoes"
+  ],
+  "paymentMethods": [
+    {
+      "value": "dinheiro",
+      "label": "Dinheiro",
+      "active": true
+    },
+    {
+      "value": "pix_key",
+      "label": "Chave PIX",
+      "active": true
+    },
+    {
+      "value": "pix_qr",
+      "label": "Chave PIX QR Code",
+      "active": true
+    },
+    {
+      "value": "credit_card",
+      "label": "Cartao de Credito",
+      "active": true
+    },
+    {
+      "value": "debit_card",
+      "label": "Cartao de Debito",
+      "active": true
+    }
+  ],
+  "deliveryZones": [
+    {
+      "id": "zone-centro",
+      "name": "Centro",
+      "fee": 5,
+      "active": true
+    },
+    {
+      "id": "zone-jardim-america",
+      "name": "Jardim America",
+      "fee": 7,
+      "active": true
+    },
+    {
+      "id": "zone-vila-nova",
+      "name": "Vila Nova",
+      "fee": 6,
+      "active": true
+    },
+    {
+      "id": "zone-industrial",
+      "name": "Industrial",
+      "fee": 8,
+      "active": true
+    },
+    {
+      "id": "zone-universitario",
+      "name": "Universitario",
+      "fee": 4,
+      "active": true
+    },
+    {
+      "id": "zone-parque-das-flores",
+      "name": "Parque das Flores",
+      "fee": 9,
+      "active": true
+    }
+  ],
+  "products": [],
+  "promotions": [],
+  "customers": [],
+  "orders": [],
+  "expenses": [],
+  "payables": [],
+  "receivables": [],
+  "supportRequests": [],
+  "riders": [],
+  "cashRegister": {
+    "currentSession": null,
+    "history": []
+  }
+}

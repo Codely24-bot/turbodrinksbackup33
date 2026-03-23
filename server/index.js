@@ -46,6 +46,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
+const pdvDistIndexPath = path.join(distDir, "pdv", "index.html");
 const packageJsonPath = path.join(rootDir, "package.json");
 const port = Number(process.env.PORT || 4000);
 const host = process.env.HOST || "0.0.0.0";
@@ -544,6 +545,26 @@ const buildDashboard = (db) => {
     deliveryFees: db.settings.deliveryFees,
     deliveryZones: db.deliveryZones || [],
     whatsapp: getWhatsAppStatus()
+  };
+};
+
+const buildPosBootstrapPayload = (db) => {
+  const cashRegister = ensureCashRegister({ ...db, cashRegister: db.cashRegister });
+
+  return {
+    settings: {
+      storeName: db.settings?.storeName || "",
+      addressLine: db.settings?.addressLine || "",
+      city: db.settings?.city || ""
+    },
+    categories: getCatalogCategories(db),
+    products: [...db.products]
+      .filter((product) => product.active && product.stock > 0)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(toStorefrontProduct),
+    promotions: [...db.promotions].filter((promotion) => promotion.active),
+    paymentMethods: getPaymentMethods(db).filter((method) => method.active),
+    cashRegister
   };
 };
 
@@ -1156,6 +1177,7 @@ app.post("/api/admin/pos/orders", requireAdmin, async (request, response) => {
     });
 
     notifyOrderUpdate(createdOrder, createdOrder.status, { skipWhatsApp: true });
+    io.emit("pos:update");
 
     return response.status(201).json({
       order: createdOrder,
@@ -1203,6 +1225,15 @@ app.get("/api/admin/profile", requireAdmin, async (request, response) => {
     confirmed: data.confirmed
   });
 });
+
+app.get("/api/admin/pos/bootstrap", requireAdmin, asyncHandler(async (_request, response) => {
+  const payload = await getCachedResponse("admin-pos-bootstrap", async () => {
+    const db = await readDB();
+    return buildPosBootstrapPayload(db);
+  });
+
+  response.json(payload);
+}));
 
 app.get("/api/admin/debug-token", async (request, response) => {
   const authorization = request.headers.authorization || "";
@@ -1895,6 +1926,8 @@ app.post("/api/admin/cash/open", requireAdmin, async (request, response) => {
       return draft;
     });
 
+    io.emit("dashboard:update");
+    io.emit("pos:update");
     return response.status(201).json(session);
   } catch (error) {
     return response.status(400).json({ message: error.message || "Falha ao abrir caixa." });
@@ -1929,6 +1962,8 @@ app.post("/api/admin/cash/movement", requireAdmin, async (request, response) => 
       return draft;
     });
 
+    io.emit("dashboard:update");
+    io.emit("pos:update");
     return response.status(201).json(session);
   } catch (error) {
     return response.status(400).json({ message: error.message || "Falha ao registrar movimento." });
@@ -1963,6 +1998,8 @@ app.post("/api/admin/cash/close", requireAdmin, async (request, response) => {
       return draft;
     });
 
+    io.emit("dashboard:update");
+    io.emit("pos:update");
     return response.json(closedSession);
   } catch (error) {
     return response.status(400).json({ message: error.message || "Falha ao fechar caixa." });
@@ -2259,6 +2296,20 @@ app.get("/api/admin/reports", requireAdmin, async (request, response) => {
 
 if (fs.existsSync(distDir)) {
   app.use(express.static(distDir));
+  app.get("/pdv", (request, response, next) => {
+    if (request.path.startsWith("/api") || !fs.existsSync(pdvDistIndexPath)) {
+      return next();
+    }
+
+    return response.sendFile(pdvDistIndexPath);
+  });
+  app.get("/pdv/*", (request, response, next) => {
+    if (request.path.startsWith("/api") || !fs.existsSync(pdvDistIndexPath)) {
+      return next();
+    }
+
+    return response.sendFile(pdvDistIndexPath);
+  });
   app.get("*", (request, response, next) => {
     if (request.path.startsWith("/api")) {
       return next();
