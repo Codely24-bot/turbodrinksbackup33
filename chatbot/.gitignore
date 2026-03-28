@@ -1,0 +1,10 @@
+node_modules/
+.wwebjs_auth/
+.wwebjs_cache/
+npm-debug.log*
+*.log
+
+# Runtime data
+bairros.json
+config.json
+package-lock .json

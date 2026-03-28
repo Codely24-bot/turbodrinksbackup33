@@ -1,0 +1,23 @@
+{
+  "name": "bot-fortin",
+  "version": "1.0.0",
+  "description": "Bot WhatsApp Fortin Delivery",
+  "main": "robo.cjs",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "start": "node robo.cjs",
+    "postinstall": "npx puppeteer browsers install chrome"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^16.4.7",
+    "moment-timezone": "^0.5.45",
+    "openai": "^4.78.1",
+    "puppeteer": "^24.26.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.2"
+  }
+}

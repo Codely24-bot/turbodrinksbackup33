@@ -1,0 +1,15 @@
+node_modules
+chatbot/node_modules
+dist
+.env
+.wwebjs_auth/
+.wwebjs_cache/
+.node20/
+chatbot/.node20/
+*.zip
+node-index.json
+chatbot/node-index.json
+*.log
+*.err
+bot.log
+bot.err
