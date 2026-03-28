@@ -61,13 +61,20 @@ const defaultResponse = {
   message: 'Clique em uma ação para testar a API simulada.',
 };
 
-const BOT_URL_STORAGE_KEY = 'fortin_whatsapp_bot_url';
+export const BOT_URL_STORAGE_KEY = 'fortin_whatsapp_bot_url';
 
 const normalizeBotUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
+export const DEFAULT_BOT_BASE_URL =
+  normalizeBotUrl(import.meta.env.VITE_WHATSAPP_BOT_URL || '') || 'http://localhost:3333';
+
+export const getPreferredBotBaseUrl = () => {
+  if (typeof window === 'undefined') return DEFAULT_BOT_BASE_URL;
+  return normalizeBotUrl(window.localStorage.getItem(BOT_URL_STORAGE_KEY)) || DEFAULT_BOT_BASE_URL;
+};
 
 const pushBairrosToBot = async (bairros) => {
   if (typeof window === 'undefined') return;
-  const baseUrl = normalizeBotUrl(window.localStorage.getItem(BOT_URL_STORAGE_KEY));
+  const baseUrl = getPreferredBotBaseUrl();
   if (!baseUrl) return;
 
   try {
@@ -83,7 +90,7 @@ const pushBairrosToBot = async (bairros) => {
 
 const pushAppInfoToBot = async (appInfo) => {
   if (typeof window === 'undefined') return;
-  const baseUrl = normalizeBotUrl(window.localStorage.getItem(BOT_URL_STORAGE_KEY));
+  const baseUrl = getPreferredBotBaseUrl();
   if (!baseUrl) return;
 
   try {

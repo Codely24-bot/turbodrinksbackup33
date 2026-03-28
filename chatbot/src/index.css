@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --layout-bg: #1a2332;
+  --layout-surface: #1a2332;
+  --layout-surface-2: #111827;
+  --layout-border: #374151;
+  --layout-accent: #00d084;
+  --layout-accent-strong: #00b872;
+  --layout-text-muted: #94a3b8;
+  --layout-scrollbar: #2a3a4a;
+  --layout-scrollbar-hover: #3a4a5a;
+}
+
+[data-theme='safira'] {
+  --layout-bg: #0f172a;
+  --layout-surface: #0f172a;
+  --layout-surface-2: #111827;
+  --layout-border: #1f2937;
+  --layout-accent: #3b82f6;
+  --layout-accent-strong: #2563eb;
+  --layout-text-muted: #93a4bf;
+  --layout-scrollbar: #1f2937;
+  --layout-scrollbar-hover: #334155;
+}
+
+[data-theme='black'] {
+  --layout-bg: #0a0a0a;
+  --layout-surface: #0a0a0a;
+  --layout-surface-2: #111111;
+  --layout-border: #222222;
+  --layout-accent: #00d084;
+  --layout-accent-strong: #00b872;
+  --layout-text-muted: #b3b3b3;
+  --layout-scrollbar: #1a1a1a;
+  --layout-scrollbar-hover: #2a2a2a;
+}
+
+[data-theme='white'] {
+  --layout-bg: #f7f7f7;
+  --layout-surface: #ffffff;
+  --layout-surface-2: #ffffff;
+  --layout-border: #e5e5e5;
+  --layout-accent: #ff7a00;
+  --layout-accent-strong: #ff8b1f;
+  --layout-text-muted: #6b7280;
+  --layout-scrollbar: #d1d5db;
+  --layout-scrollbar-hover: #9ca3af;
+}
+
+[data-theme='white'] body {
+  color: #111827;
+}
+
+[data-theme='white'] .text-white {
+  color: #111827;
+}
+
+[data-theme='white'] .bg-[var(--layout-bg)] {
+  color: #111827;
+}
+
+[data-theme='sunset'] {
+  --layout-bg: #2b1c17;
+  --layout-surface: #2b1c17;
+  --layout-surface-2: #3b251c;
+  --layout-border: #513127;
+  --layout-accent: #ff7a00;
+  --layout-accent-strong: #ff8b1f;
+  --layout-text-muted: #f5c29a;
+  --layout-scrollbar: #3b251c;
+  --layout-scrollbar-hover: #4a2f23;
+}
+
+[data-theme='violeta'] {
+  --layout-bg: #1c1630;
+  --layout-surface: #1c1630;
+  --layout-surface-2: #241a3d;
+  --layout-border: #3a2a5c;
+  --layout-accent: #a855f7;
+  --layout-accent-strong: #9333ea;
+  --layout-text-muted: #c4b5fd;
+  --layout-scrollbar: #2a1f44;
+  --layout-scrollbar-hover: #3a2a5c;
+}
+
+[data-theme='graphite'] {
+  --layout-bg: #0f1115;
+  --layout-surface: #0f1115;
+  --layout-surface-2: #141a22;
+  --layout-border: #263142;
+  --layout-accent: #4dd0e1;
+  --layout-accent-strong: #22b8cf;
+  --layout-text-muted: #9aa6b2;
+  --layout-scrollbar: #1b2230;
+  --layout-scrollbar-hover: #2a3647;
+}
+
+[data-theme='rose'] {
+  --layout-bg: #16131a;
+  --layout-surface: #16131a;
+  --layout-surface-2: #1b1722;
+  --layout-border: #3a2e43;
+  --layout-accent: #f472b6;
+  --layout-accent-strong: #ec4899;
+  --layout-text-muted: #c3b1cc;
+  --layout-scrollbar: #221a2c;
+  --layout-scrollbar-hover: #32243d;
+}
+
+[data-theme='sage'] {
+  --layout-bg: #141714;
+  --layout-surface: #141714;
+  --layout-surface-2: #191d19;
+  --layout-border: #323a32;
+  --layout-accent: #a3b18a;
+  --layout-accent-strong: #8f9f76;
+  --layout-text-muted: #b1b9aa;
+  --layout-scrollbar: #1f2520;
+  --layout-scrollbar-hover: #2c332c;
+}
+
+[data-theme='copper'] {
+  --layout-bg: #1a1411;
+  --layout-surface: #1a1411;
+  --layout-surface-2: #201714;
+  --layout-border: #3b2d26;
+  --layout-accent: #e07a5f;
+  --layout-accent-strong: #d16a50;
+  --layout-text-muted: #d5b2a4;
+  --layout-scrollbar: #241a16;
+  --layout-scrollbar-hover: #32241e;
+}
+
+body {
+  background: var(--layout-bg);
+  color: #fff;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100dvh;
+}
+
+.login-bg {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+img, svg {
+  max-width: 100%;
+  height: auto;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--layout-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--layout-scrollbar);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--layout-scrollbar-hover);
+}

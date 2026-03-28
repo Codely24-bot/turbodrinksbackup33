@@ -17,7 +17,12 @@ import ModuleShell from '@/components/delivery/ModuleShell';
 import PanelCard from '@/components/delivery/PanelCard';
 import { Button } from '@/components/ui/button';
 import { useDeliveryHub } from '@/hooks/useDeliveryHub';
-import { deliveryFormatting } from '@/services/deliveryHubService';
+import {
+  BOT_URL_STORAGE_KEY,
+  DEFAULT_BOT_BASE_URL,
+  deliveryFormatting,
+  getPreferredBotBaseUrl,
+} from '@/services/deliveryHubService';
 
 const exampleCode = `window.chatbotApi.getProdutos()
 
@@ -192,9 +197,7 @@ const ChatbotApiPage = () => {
   const [configDirty, setConfigDirty] = useState(false);
   const [aiDirty, setAiDirty] = useState(false);
   const [aiDraft, setAiDraft] = useState(() => buildAiDefaults(snapshot.settings?.chatbotAi || {}));
-  const [botBaseUrl, setBotBaseUrl] = useState(() => {
-    return window.localStorage.getItem('fortin_whatsapp_bot_url') || 'http://localhost:3333';
-  });
+  const [botBaseUrl, setBotBaseUrl] = useState(() => getPreferredBotBaseUrl());
   const [botQrNonce, setBotQrNonce] = useState(Date.now());
   const [syncStatus, setSyncStatus] = useState('');
   const [botBairrosTotal, setBotBairrosTotal] = useState(null);
@@ -266,7 +269,9 @@ const ChatbotApiPage = () => {
   }, [menuText]);
 
   useEffect(() => {
-    window.localStorage.setItem('fortin_whatsapp_bot_url', botBaseUrl);
+    if (typeof window === 'undefined') return;
+    const normalized = String(botBaseUrl || '').trim();
+    window.localStorage.setItem(BOT_URL_STORAGE_KEY, normalized || DEFAULT_BOT_BASE_URL);
   }, [botBaseUrl]);
 
   useEffect(() => {
@@ -1152,11 +1157,12 @@ const ChatbotApiPage = () => {
               <input
                 value={botBaseUrl}
                 onChange={(event) => setBotBaseUrl(event.target.value)}
-                placeholder="http://localhost:3333"
+                placeholder={DEFAULT_BOT_BASE_URL}
                 className="w-full rounded-lg border border-[var(--layout-border)] bg-[var(--layout-bg)] px-3 py-2 text-sm text-white outline-none focus:border-[var(--layout-accent)]"
               />
               <div className="mt-2 text-xs text-[var(--layout-text-muted)]">
-                Exemplo: `http://localhost:3333`, `http://localhost:3001/qr` ou `http://localhost:3001/qr.png`.
+                Exemplo: <code>{DEFAULT_BOT_BASE_URL}</code>, <code>http://localhost:3001/qr</code> ou{' '}
+                <code>http://localhost:3001/qr.png</code>.
               </div>
             </div>
 

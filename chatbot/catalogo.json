@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-27T03:35:46.081Z",
+  "updatedAt": "2026-03-27T22:57:31.672Z",
   "itens": [
     {
       "id": "dc7e0c35-a36c-4657-932b-99e55c171f20",
@@ -25,7 +25,7 @@
       "categoria": "alimentos",
       "unidade": "UN",
       "preco": 0.2,
-      "estoque": 20,
+      "estoque": 15,
       "ativo": true
     },
     {
@@ -62,7 +62,7 @@
       "categoria": "black",
       "unidade": "UN",
       "preco": 2,
-      "estoque": 2,
+      "estoque": 0,
       "ativo": true
     },
     {
@@ -71,7 +71,7 @@
       "categoria": "brahma",
       "unidade": "UN",
       "preco": 5.5,
-      "estoque": 126,
+      "estoque": 112,
       "ativo": true,
       "volumeMl": 473
     },
@@ -248,7 +248,7 @@
       "categoria": "destilado",
       "unidade": "UN",
       "preco": 3,
-      "estoque": 10,
+      "estoque": 9,
       "ativo": true
     },
     {
@@ -376,7 +376,7 @@
       "categoria": "heineken",
       "unidade": "UN",
       "preco": 7.5,
-      "estoque": 4,
+      "estoque": 0,
       "ativo": true,
       "volumeMl": 473
     },
@@ -406,7 +406,7 @@
       "categoria": "kaiser",
       "unidade": "UN",
       "preco": 4.5,
-      "estoque": 58,
+      "estoque": 54,
       "ativo": true,
       "volumeMl": 473
     },
@@ -444,7 +444,7 @@
       "categoria": "destilado",
       "unidade": "UN",
       "preco": 6.5,
-      "estoque": 204,
+      "estoque": 200,
       "ativo": true,
       "volumeMl": 473
     },
@@ -501,7 +501,7 @@
       "categoria": "porto",
       "unidade": "UN",
       "preco": 2,
-      "estoque": 2,
+      "estoque": 0,
       "ativo": true
     },
     {

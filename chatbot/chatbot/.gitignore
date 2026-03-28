@@ -1,0 +1,17 @@
+node_modules/
+.node20/
+**/.node20/
+node-index.json
+**/node-index.json
+node-v*.zip
+**/node-v*.zip
+.wwebjs_auth/
+.wwebjs_cache/
+npm-debug.log*
+*.log
+
+# Runtime data
+bairros.json
+config.json
+catalogo.json
+data/

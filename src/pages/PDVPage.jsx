@@ -58,6 +58,24 @@ const PDVPage = () => {
   const { fetchMovimentacoes, movimentacoes, ensureCaixaExists, caixaSaldo, getCaixaSaldo, registerSaleMovement } = useCaixaMovimentacoes();
   const { fetchComboInsumos } = useCombos();
 
+  const normalizePaymentMethod = (method) => {
+    const raw = (method || '').toString().trim().toLowerCase();
+    if (!raw) return null;
+    const clean = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (clean.includes('dinheiro')) return 'dinheiro';
+    if (clean.includes('pix')) return 'pix';
+    if (clean.includes('debito')) return 'debito';
+    if (clean.includes('credito')) return 'credito';
+    if (clean.includes('fiado')) return 'fiado';
+    if (clean.includes('consumo')) return 'consumo';
+    return clean;
+  };
+
+  const isNonCashPayment = (method) => {
+    const key = normalizePaymentMethod(method);
+    return key === 'fiado' || key === 'consumo';
+  };
+
   // Derived state
   const isCashierOpen = !!cashierSession;
   const currentEmployee = cashierSession?.funcionario;
@@ -516,16 +534,24 @@ const PDVPage = () => {
       }
 
       if (activeCaixaId) {
-         const movimentoForma = vendaData?.forma_pagamento || (finalData.payments && finalData.payments.length > 0 ? finalData.payments[0].method : 'multiplo');
-         await registerSaleMovement(
-           activeCaixaId, 
-           finalData.total, 
-           vendaData.id, 
-           vendaData.numero_venda, 
-           caixaSaldo,
-           movimentoForma
-         );
-         
+         const paymentsArr = Array.isArray(finalData.payments) ? finalData.payments : [];
+         const cashPayments = paymentsArr.filter((p) => !isNonCashPayment(p?.method));
+         const cashTotal = cashPayments.reduce((sum, p) => sum + (Number(p?.value) || 0), 0);
+         const movimentoForma = cashPayments.length === 1
+           ? normalizePaymentMethod(cashPayments[0]?.method)
+           : (cashPayments.length > 1 ? 'multiplo' : null);
+
+         if (cashTotal > 0) {
+           await registerSaleMovement(
+             activeCaixaId, 
+             cashTotal, 
+             vendaData.id, 
+             vendaData.numero_venda, 
+             caixaSaldo,
+             movimentoForma
+           );
+         }
+
          await handleRefreshMovimentacoes();
       }
 

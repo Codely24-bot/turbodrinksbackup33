@@ -1,0 +1,8 @@
+.git
+.gitignore
+node_modules
+.env
+.node20
+*.log
+.wwebjs_auth
+.wwebjs_cache

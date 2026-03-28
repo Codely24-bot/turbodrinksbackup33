@@ -1,0 +1,16 @@
+.git
+.gitignore
+node_modules
+dist
+.env
+.node20
+chatbot
+bot.log
+bot.err
+node-index.json
+node-v20.9.0-win-x64.zip
+audio-service.cjs
+robo.cjs
+bairros.json
+catalogo.json
+config.json

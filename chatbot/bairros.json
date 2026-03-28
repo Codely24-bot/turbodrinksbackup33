@@ -1,0 +1,329 @@
+{
+  "updatedAt": "2026-03-27T22:57:31.668Z",
+  "bairros": [
+    {
+      "id": "3-e-4-secao",
+      "nome": "3 e 4 Seção",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "aguas-claras",
+      "nome": "Aguas Claras",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "aguia-dourada",
+      "nome": "Aguia Dourada",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "amazonas",
+      "nome": "Amazonas",
+      "taxaEntrega": 10,
+      "tempoMedio": "30 min"
+    },
+    {
+      "id": "araguaia",
+      "nome": "Araguaia",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "bandeirantes",
+      "nome": "Bandeirantes",
+      "taxaEntrega": 0,
+      "tempoMedio": "30 min"
+    },
+    {
+      "id": "barreirinho",
+      "nome": "Barreirinho",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "barreiro",
+      "nome": "Barreiro",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "bom-sucesso",
+      "nome": "Bom Sucesso",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "brasil-industrial",
+      "nome": "Brasil Industrial",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "cardoso",
+      "nome": "Cardoso",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "colorado",
+      "nome": "Colorado",
+      "taxaEntrega": 5,
+      "tempoMedio": "25 min"
+    },
+    {
+      "id": "conjunto-ademar-maldonado",
+      "nome": "Conjunto Ademar Maldonado",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "conjunto-jatoba",
+      "nome": "Conjunto Jatoba",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "conjunto-tunel-de-ibirite",
+      "nome": "Conjunto Tunel de Ibirite",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "corumbiara",
+      "nome": "Corumbiara",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "cruz-de-malta",
+      "nome": "Cruz de Malta",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "diamante",
+      "nome": "Diamante",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "distrito-industrial",
+      "nome": "Distrito Industrial",
+      "taxaEntrega": 0,
+      "tempoMedio": "15"
+    },
+    {
+      "id": "durval-de-barros",
+      "nome": "Durval de Barros",
+      "taxaEntrega": 10,
+      "tempoMedio": "30 min"
+    },
+    {
+      "id": "eliana-silva",
+      "nome": "Eliana Silva",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "flavio-de-oliveira",
+      "nome": "Flavio de Oliveira",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "flavio-marques-lisboa",
+      "nome": "Flavio Marques Lisboa",
+      "taxaEntrega": 0,
+      "tempoMedio": "25 min"
+    },
+    {
+      "id": "inconfidentes",
+      "nome": "Inconfidentes",
+      "taxaEntrega": 10,
+      "tempoMedio": "30 min"
+    },
+    {
+      "id": "independencia",
+      "nome": "Independencia",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "jardim-do-vale",
+      "nome": "Jardim do Vale",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "jardim-industrial",
+      "nome": "Jardim Industrial",
+      "taxaEntrega": 0,
+      "tempoMedio": "25 min"
+    },
+    {
+      "id": "lindeia",
+      "nome": "Lindeia",
+      "taxaEntrega": 0,
+      "tempoMedio": "25 min"
+    },
+    {
+      "id": "los-angeles",
+      "nome": "Los Angeles",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "mangueiras",
+      "nome": "Mangueiras",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "marilandia",
+      "nome": "Marilandia",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "milionarios",
+      "nome": "Milionarios",
+      "taxaEntrega": 0,
+      "tempoMedio": "25 min"
+    },
+    {
+      "id": "mineirao",
+      "nome": "Mineirao",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "miramar",
+      "nome": "Miramar",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "morada-da-serra",
+      "nome": "Morada da Serra",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "nossa-senhora-de-lourdes",
+      "nome": "Nossa Senhora de Lourdes",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "palmares",
+      "nome": "Palmares",
+      "taxaEntrega": 8,
+      "tempoMedio": "30 min"
+    },
+    {
+      "id": "parque-elizabeth",
+      "nome": "Parque Elizabeth",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "petropolis",
+      "nome": "Petropolis",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "piratinga",
+      "nome": "Piratinga",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "pongelupe",
+      "nome": "Pongelupe",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "santa-cecilia",
+      "nome": "Santa Cecilia",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "sol-nascente",
+      "nome": "Sol Nascente",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "solar-do-barreiro",
+      "nome": "Solar do Barreiro",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "tirol",
+      "nome": "Tirol",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "urucuia",
+      "nome": "Urucuia",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "vale-do-jatoba",
+      "nome": "Vale do Jatoba",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "vila-cemig",
+      "nome": "Vila Cemig",
+      "taxaEntrega": 10,
+      "tempoMedio": "25 min"
+    },
+    {
+      "id": "vila-dos-operarios",
+      "nome": "Vila dos Operarios",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "vila-ecologica",
+      "nome": "Vila Ecologica",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "vila-ideal",
+      "nome": "Vila Ideal",
+      "taxaEntrega": 0,
+      "tempoMedio": "20 min"
+    },
+    {
+      "id": "vila-pinho",
+      "nome": "Vila Pinho",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    },
+    {
+      "id": "vila-santa-rita",
+      "nome": "Vila Santa Rita",
+      "taxaEntrega": 0,
+      "tempoMedio": "10 min"
+    },
+    {
+      "id": "vitoria-da-conquista",
+      "nome": "Vitoria da Conquista",
+      "taxaEntrega": 0,
+      "tempoMedio": "15 min"
+    }
+  ]
+}

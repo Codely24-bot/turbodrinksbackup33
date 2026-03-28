@@ -1,0 +1,58 @@
+PASSO A PASSO - INTEGRACAO CHATBOT + PAINEL
+
+1) Iniciar o BOT (WhatsApp)
+   - Abra o terminal
+   - Execute:
+     cd C:\Users\Luis\Desktop\Nova pasta (2)\pdvsystem-main\chatbot
+     npm install
+     npm start
+   - Se precisar usar outra porta:
+     set PORT=3003 && npm start
+
+2) Abrir o PAINEL
+   - Execute o painel normalmente (Vite)
+   - Exemplo: http://localhost:3004
+
+3) Configurar URL do BOT no painel
+   - Aba: CHATBOT
+   - Campo: "URL do bot WhatsApp"
+   - Exemplo:
+     http://localhost:3003
+
+4) Conectar WhatsApp
+   - Aba: CHATBOT
+   - QR code vai aparecer do bot real
+   - Escaneie no WhatsApp
+
+5) Sincronizar Bairros
+   - Painel da Loja > Bairros de entrega
+   - Salve qualquer alteracao
+   - Ou clique em "Sincronizar bairros agora" na aba CHATBOT
+
+6) Sincronizar Horario e Endereco
+   - Painel da Loja > Personalizacao do App
+   - Atualize "Horario de funcionamento" e "Endereco da loja fisica"
+   - Clique em Salvar
+   - Ou clique em "Sincronizar horario/endereco" na aba CHATBOT
+
+7) Validar
+   - No navegador, teste:
+     http://localhost:3003/bairros
+     http://localhost:3003/config
+   - No bot, as mensagens 3 e 4 devem mostrar os dados do painel.
+
+OBS:
+ - Se o painel estiver publicado em dominio, localhost nao funciona.
+   Use URL publica do bot (ex: ngrok) no campo da aba CHATBOT.
+
+O QUE MUDA SE EU REMOVER ALGUNS ARQUIVOS DO BOT
+ - Nenhuma funcionalidade do bot muda.
+ - Esses arquivos seriam criados novamente automaticamente quando o bot receber sincronizacao do painel.
+ - O repositorio fica mais limpo e seguro (nao versiona dados que mudam sempre).
+
+O QUE EU MANTERIA NO REPOSITORIO
+ - chatbot/robo.cjs
+ - chatbot/package.json
+ - chatbot/nixpacks.toml
+ - chatbot/PASSO_A_PASSO.txt
+ - demais arquivos de codigo e configuracao fixa

@@ -1,0 +1,21 @@
+{
+  "horarioFuncionamento": "",
+  "enderecoLoja": "",
+  "ai": {
+    "enabled": false,
+    "mode": "fallback",
+    "provider": "custom",
+    "endpoint": "",
+    "authType": "bearer",
+    "headerName": "Authorization",
+    "headerValue": "",
+    "payloadKey": "message",
+    "responsePath": "",
+    "apiKey": "",
+    "model": "",
+    "temperature": 0.4,
+    "maxTokens": 600,
+    "systemPrompt": ""
+  },
+  "updatedAt": "2026-03-27T22:57:31.034Z"
+}
